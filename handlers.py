@@ -204,11 +204,12 @@ def register_handlers(dp: Dispatcher, bot: Bot, admin_id: int):
                 logger.info(
                     f"Успешная регистрация: {name}, {role}, user_id={callback_query.from_user.id}"
                 )
-                time_field = "Вы волонтер"
+                time_field = "💪🏼 Вы волонтер"
                 extra_info = ""
                 user_message = messages["registration_success"].format(
                     name=name, time_field=time_field, extra_info=extra_info
                 )
+                time_field = "💪🏼 " + time_field.split(" ")[2].capitalize()
                 await callback_query.message.answer(user_message)
                 admin_message = messages["admin_notification"].format(
                     name=name,
@@ -384,7 +385,7 @@ def register_handlers(dp: Dispatcher, bot: Bot, admin_id: int):
         logger.info(f"Команда /paid от user_id={message.from_user.id}")
         parts = message.text.split()
         if len(parts) != 2 or not parts[1].isdigit():
-            await message.answer("Используйте: /paid <ID пользователя>")
+            await message.answer("Используйте: /paid &lt;ID пользователя&gt;")
             return
         user_id = int(parts[1])
         participant = get_participant_by_user_id(user_id)
@@ -410,7 +411,7 @@ def register_handlers(dp: Dispatcher, bot: Bot, admin_id: int):
         logger.info(f"Команда /remove от user_id={message.from_user.id}")
         parts = message.text.split()
         if len(parts) != 2 or not parts[1].isdigit():
-            await message.answer("Используйте: /remove <ID пользователя>")
+            await message.answer("Используйте: /remove &lt;ID пользователя&gt;")
             return
         user_id = int(parts[1])
         participant = get_participant_by_user_id(user_id)

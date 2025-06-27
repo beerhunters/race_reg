@@ -64,5 +64,11 @@ if [ ! -d "images" ]; then
     mkdir images
 fi
 chmod -R 777 data logs images
+if [ -f "data/race_participants.db" ]; then
+    chmod 666 data/race_participants.db
+    echo "Права доступа для data/race_participants.db установлены (666)."
+else
+    echo "Файл data/race_participants.db не существует, будет создан при запуске."
+fi
 echo "Права доступа для директорий data, logs и images установлены."
 echo "Конфигурация проверена успешно!"
