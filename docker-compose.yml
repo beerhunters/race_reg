@@ -1,4 +1,3 @@
-version: '3.8'
 services:
   bot:
     build: .
@@ -6,7 +5,13 @@ services:
       - BOT_TOKEN=${BOT_TOKEN}
       - ADMIN_ID=${ADMIN_ID}
     volumes:
-      - ./race_participants.db:/app/race_participants.db
+      - ./data:/app/data
+      - ./logs:/app/logs
       - ./config.json:/app/config.json
       - ./messages.json:/app/messages.json
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "3"
     restart: unless-stopped

@@ -163,6 +163,3 @@ cython_debug/
 .idea/
 
 race_participants.db
-bot.log
-data/
-logs/
