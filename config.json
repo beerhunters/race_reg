@@ -1,5 +1,7 @@
 {
   "max_runners": 25,
   "max_volunteers": 6,
-  "csv_delimiter": ";"
+  "csv_delimiter": ";",
+  "log_level": "ERROR",
+  "sponsor_image_path": "/app/images/sponsor_image.jpeg"
 }
