@@ -464,6 +464,11 @@ def register_handlers(dp: Dispatcher, bot: Bot, admin_id: int):
         )
         logger.info(f"CSV-файл успешно отправлен для user_id={message.from_user.id}")
 
+    @dp.message(Command("info"))
+    async def show_info(message: Message):
+        logger.info(f"Команда /info от user_id={message.from_user.id}")
+        await message.answer(messages["info_message"])
+
     @dp.message()
     async def handle_other_messages(message: Message):
         logger.info(
