@@ -93,6 +93,7 @@ async def main():
     await bot.set_my_commands(
         [
             BotCommand(command="/start", description="Run, drink, repeat!"),
+            BotCommand(command="/info", description="Информация"),
         ]
     )
     await dp.start_polling(bot)
