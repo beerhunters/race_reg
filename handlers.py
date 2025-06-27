@@ -62,7 +62,6 @@ log_level = {
     "CRITICAL": logging.CRITICAL,
 }
 logging.basicConfig(
-    level=logging.ERROR,
     format="%(asctime)s - %(levelname)s - %(message)s",
     handlers=[
         logging.StreamHandler(),
@@ -95,11 +94,11 @@ except json.JSONDecodeError as e:
 
 if config.get("log_level") not in log_level:
     logger.error(
-        f"Недопустимое значение log_level: {config.get('log_level')}. Используется INFO."
+        f"Недопустимое значение log_level: {config.get('log_level')}. Используется ERROR."
     )
-    logger.setLevel(logging.INFO)
+    logging.getLogger().setLevel(logging.ERROR)
 else:
-    logger.setLevel(log_level[config["log_level"]])
+    logging.getLogger().setLevel(log_level[config["log_level"]])
     logger.info(f"Установлен уровень логирования: {config['log_level']}")
 
 
