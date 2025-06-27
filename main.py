@@ -3,6 +3,8 @@ import asyncio
 import logging
 from aiogram import Bot, Dispatcher
 from aiogram.fsm.storage.memory import MemoryStorage
+from aiogram.types import BotCommand
+
 from database import init_db
 import handlers
 
@@ -37,6 +39,11 @@ async def main():
         raise
     logger.info("Регистрация обработчиков")
     handlers.register_handlers(dp, bot, ADMIN_ID)
+    await bot.set_my_commands(
+        [
+            BotCommand(command="start", description="Run, drink, repeat!"),
+        ]
+    )
     logger.info("Запуск бота")
     try:
         await dp.start_polling(bot)

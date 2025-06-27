@@ -14,6 +14,7 @@ from aiogram.types import (
     InlineKeyboardMarkup,
     InlineKeyboardButton,
     BufferedInputFile,
+    FSInputFile,
 )
 from database import (
     add_participant,
@@ -86,6 +87,13 @@ def register_handlers(dp: Dispatcher, bot: Bot, admin_id: int):
     @dp.message(CommandStart())
     async def cmd_start(message: Message, state: FSMContext):
         logger.info(f"Команда /start от user_id={message.from_user.id}")
+        if message.from_user.id == admin_id:
+            logger.info(
+                f"Пользователь user_id={message.from_user.id} является администратором"
+            )
+            await message.answer(messages["admin_commands"])
+            await state.clear()
+            return
         participant = get_participant_by_user_id(message.from_user.id)
         if participant:
             logger.info(
@@ -94,7 +102,9 @@ def register_handlers(dp: Dispatcher, bot: Bot, admin_id: int):
             name = participant[2]
             target_time = participant[3]
             role = participant[4]
-            time_field = target_time if role == "runner" else "Волонтер"
+            time_field = (
+                f"⏱️ Целевое время: {target_time}" if role == "runner" else "Вы волонтер"
+            )
             await message.answer(
                 messages["already_registered"].format(
                     name=name, time_field=time_field, role=role
@@ -150,9 +160,10 @@ def register_handlers(dp: Dispatcher, bot: Bot, admin_id: int):
                 logger.info(
                     f"Успешная регистрация: {name}, {role}, user_id={callback_query.from_user.id}"
                 )
-                time_field = "Волонтер"
+                time_field = "Вы волонтер"
+                extra_info = ""  # Нет текста про оплату для волонтеров
                 user_message = messages["registration_success"].format(
-                    name=name, time_field=time_field
+                    name=name, time_field=time_field, extra_info=extra_info
                 )
                 await callback_query.message.answer(user_message)
                 admin_message = messages["admin_notification"].format(
@@ -160,8 +171,30 @@ def register_handlers(dp: Dispatcher, bot: Bot, admin_id: int):
                     time_field=time_field,
                     user_id=callback_query.from_user.id,
                     username=username,
+                    extra_info=extra_info,
                 )
                 await bot.send_message(chat_id=admin_id, text=admin_message)
+                try:
+                    image_path = "/app/images/sponsor_image.jpeg"
+                    if os.path.exists(image_path):
+                        await bot.send_photo(
+                            chat_id=callback_query.from_user.id,
+                            photo=FSInputFile(image_path),
+                            caption=messages["sponsor_message"],
+                        )
+                        logger.info(
+                            f"Сообщение со спонсорами отправлено пользователю user_id={callback_query.from_user.id}"
+                        )
+                    else:
+                        logger.warning(
+                            f"Файл {image_path} не найден, отправляется только текст спонсоров"
+                        )
+                        await callback_query.message.answer(messages["sponsor_message"])
+                except Exception as e:
+                    logger.error(
+                        f"Ошибка при отправке сообщения со спонсорами пользователю user_id={callback_query.from_user.id}: {e}"
+                    )
+                    await callback_query.message.answer(messages["sponsor_message"])
                 logger.info(
                     f"Сообщения отправлены: пользователю и админу (admin_id={admin_id})"
                 )
@@ -193,9 +226,10 @@ def register_handlers(dp: Dispatcher, bot: Bot, admin_id: int):
             logger.info(
                 f"Успешная регистрация: {name}, {role}, user_id={message.from_user.id}"
             )
-            time_field = target_time
+            time_field = f"⏱️ Целевое время: {target_time}"
+            extra_info = "💰 Ожидается оплата.\nПосле поступления оплаты вы получите подтверждение участия."
             user_message = messages["registration_success"].format(
-                name=name, time_field=time_field
+                name=name, time_field=time_field, extra_info=extra_info
             )
             await message.answer(user_message)
             admin_message = messages["admin_notification"].format(
@@ -203,8 +237,30 @@ def register_handlers(dp: Dispatcher, bot: Bot, admin_id: int):
                 time_field=time_field,
                 user_id=message.from_user.id,
                 username=username,
+                extra_info=extra_info,
             )
             await bot.send_message(chat_id=admin_id, text=admin_message)
+            try:
+                image_path = "/app/images/sponsor_image.jpeg"
+                if os.path.exists(image_path):
+                    await bot.send_photo(
+                        chat_id=message.from_user.id,
+                        photo=FSInputFile(image_path),
+                        caption=messages["sponsor_message"],
+                    )
+                    logger.info(
+                        f"Сообщение со спонсорами отправлено пользователю user_id={message.from_user.id}"
+                    )
+                else:
+                    logger.warning(
+                        f"Файл {image_path} не найден, отправляется только текст спонсоров"
+                    )
+                    await message.answer(messages["sponsor_message"])
+            except Exception as e:
+                logger.error(
+                    f"Ошибка при отправке сообщения со спонсорами пользователю user_id={message.from_user.id}: {e}"
+                )
+                await message.answer(messages["sponsor_message"])
             logger.info(
                 f"Сообщения отправлены: пользователю и админу (admin_id={admin_id})"
             )
@@ -321,9 +377,7 @@ def register_handlers(dp: Dispatcher, bot: Bot, admin_id: int):
         logger.info(f"Команда /export от user_id={message.from_user.id}")
         participants = get_all_participants()
         output = io.StringIO()
-        delimiter = config.get(
-            "csv_delimiter", ";"
-        )  # Используем точку с запятой по умолчанию
+        delimiter = config.get("csv_delimiter", ";")
         writer = csv.writer(
             output, lineterminator="\n", delimiter=delimiter, quoting=csv.QUOTE_MINIMAL
         )

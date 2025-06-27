@@ -9,6 +9,7 @@ services:
       - ./logs:/app/logs
       - ./config.json:/app/config.json
       - ./messages.json:/app/messages.json
+      - ./images:/app/images
     logging:
       driver: "json-file"
       options:

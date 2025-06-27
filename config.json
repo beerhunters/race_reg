@@ -1,5 +1,5 @@
 {
-  "max_runners": 100,
-  "max_volunteers": 50,
+  "max_runners": 25,
+  "max_volunteers": 6,
   "csv_delimiter": ";"
 }
