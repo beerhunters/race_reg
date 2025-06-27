@@ -106,6 +106,7 @@ class RegistrationForm(StatesGroup):
     waiting_for_name = State()
     waiting_for_role = State()
     waiting_for_target_time = State()
+    waiting_for_info_message = State()
 
 
 def register_handlers(dp: Dispatcher, bot: Bot, admin_id: int):
@@ -468,6 +469,34 @@ def register_handlers(dp: Dispatcher, bot: Bot, admin_id: int):
     async def show_info(message: Message):
         logger.info(f"Команда /info от user_id={message.from_user.id}")
         await message.answer(messages["info_message"])
+
+    @dp.message(Command("info_create"))
+    async def info_create(message: Message, state: FSMContext):
+        logger.info(f"Команда /info_create от user_id={message.from_user.id}")
+        if message.from_user.id != admin_id:
+            logger.warning(
+                f"Доступ к /info_create запрещен для user_id={message.from_user.id}"
+            )
+            await message.answer(messages["info_create_access_denied"])
+            return
+        await message.answer(messages["info_create_prompt"])
+        await state.set_state(RegistrationForm.waiting_for_info_message)
+
+    @dp.message(StateFilter(RegistrationForm.waiting_for_info_message))
+    async def process_info_message(message: Message, state: FSMContext):
+        logger.info(f"Получен новый текст для /info от user_id={message.from_user.id}")
+        new_info_message = message.text.strip()
+        try:
+            global messages
+            messages["info_message"] = new_info_message
+            with open("messages.json", "w", encoding="utf-8") as f:
+                json.dump(messages, f, ensure_ascii=False, indent=2)
+            logger.info("Файл messages.json успешно обновлен с новым info_message")
+            await message.answer(messages["info_create_success"])
+        except Exception as e:
+            logger.error(f"Ошибка при обновлении messages.json: {e}")
+            await message.answer("Ошибка при сохранении информации. Попробуйте снова.")
+        await state.clear()
 
     @dp.message()
     async def handle_other_messages(message: Message):
