@@ -1,0 +1,12 @@
+version: '3.8'
+services:
+  bot:
+    build: .
+    environment:
+      - BOT_TOKEN=${BOT_TOKEN}
+      - ADMIN_ID=${ADMIN_ID}
+    volumes:
+      - ./race_participants.db:/app/race_participants.db
+      - ./config.json:/app/config.json
+      - ./messages.json:/app/messages.json
+    restart: unless-stopped
