@@ -1,11 +1,11 @@
 import json
 import datetime
 import io
+import csv
 import sqlite3
 import logging
 import logging.handlers
 import os
-import csv
 from aiogram import Dispatcher, Bot, F
 from aiogram.filters import Command, CommandStart, StateFilter
 from aiogram.fsm.context import FSMContext
@@ -17,6 +17,7 @@ from aiogram.types import (
     BufferedInputFile,
     FSInputFile,
 )
+from aiogram.exceptions import TelegramBadRequest
 from database import (
     add_participant,
     get_all_participants,
@@ -25,6 +26,9 @@ from database import (
     update_payment_status,
     delete_participant,
     get_participant_count_by_role,
+    add_pending_registration,
+    get_pending_registrations,
+    delete_pending_registration,
 )
 
 
@@ -159,7 +163,17 @@ def register_handlers(dp: Dispatcher, bot: Bot, admin_id: int):
             logger.info(
                 f"Пользователь user_id={message.from_user.id} является администратором"
             )
-            await message.answer(messages["admin_commands"])
+            logger.debug(f"Отправка admin_commands: {messages['admin_commands']}")
+            try:
+                await message.answer(messages["admin_commands"])
+            except TelegramBadRequest as e:
+                logger.error(
+                    f"Ошибка TelegramBadRequest при отправке admin_commands: {e}"
+                )
+                await message.answer(messages["admin_commands"], parse_mode=None)
+                logger.info(
+                    f"admin_commands отправлено без parse_mode пользователю user_id={message.from_user.id}"
+                )
             await state.clear()
             return
         participant = get_participant_by_user_id(message.from_user.id)
@@ -180,6 +194,15 @@ def register_handlers(dp: Dispatcher, bot: Bot, admin_id: int):
             )
             await state.clear()
             return
+        # Save user_id to pending_registrations
+        success = add_pending_registration(message.from_user.id)
+        if not success:
+            logger.error(
+                f"Ошибка при сохранении user_id={message.from_user.id} в pending_registrations"
+            )
+            await message.answer("Ошибка при начале регистрации. Попробуйте снова.")
+            await state.clear()
+            return
         await state.set_state(RegistrationForm.waiting_for_name)
 
     @dp.message(StateFilter(RegistrationForm.waiting_for_name))
@@ -192,12 +215,37 @@ def register_handlers(dp: Dispatcher, bot: Bot, admin_id: int):
         )
         await state.set_state(RegistrationForm.waiting_for_role)
 
+    @dp.message(Command("delete_afisha"))
+    async def delete_afisha(message: Message):
+        logger.info(f"Команда /delete_afisha от user_id={message.from_user.id}")
+        if message.from_user.id != admin_id:
+            logger.warning(
+                f"Доступ к /delete_afisha запрещен для user_id={message.from_user.id}"
+            )
+            await message.answer(messages["delete_afisha_access_denied"])
+            return
+        afisha_path = "/app/images/afisha.jpeg"
+        try:
+            if os.path.exists(afisha_path):
+                os.remove(afisha_path)
+                logger.info(f"Афиша удалена: {afisha_path}")
+                await message.answer(messages["delete_afisha_success"])
+            else:
+                logger.info(f"Афиша не найдена: {afisha_path}")
+                await message.answer(messages["delete_afisha_not_found"])
+        except Exception as e:
+            logger.error(
+                f"Ошибка при удалении афиши для user_id={message.from_user.id}: {e}"
+            )
+            await message.answer("Ошибка при удалении афиши. Попробуйте снова.")
+
     @dp.callback_query(StateFilter(RegistrationForm.waiting_for_role))
     async def process_role(callback_query, state: FSMContext):
         logger.info(f"Обработка выбора роли от user_id={callback_query.from_user.id}")
         if callback_query.data not in ["role_runner", "role_volunteer"]:
             logger.warning(f"Неверный выбор роли: {callback_query.data}")
             await callback_query.message.answer("Неверный выбор роли.")
+            await callback_query.answer()
             await state.clear()
             return
         role = "runner" if callback_query.data == "role_runner" else "volunteer"
@@ -209,12 +257,14 @@ def register_handlers(dp: Dispatcher, bot: Bot, admin_id: int):
         if current_count >= max_count:
             logger.info(f"Лимит для роли {role} достигнут: {current_count}/{max_count}")
             await callback_query.message.answer(messages[f"limit_exceeded_{role}"])
+            await callback_query.answer()
             await state.clear()
             return
         await state.update_data(role=role)
         if role == "runner":
             await callback_query.message.answer(messages["target_time_prompt"])
             await state.set_state(RegistrationForm.waiting_for_target_time)
+            await callback_query.answer()
         else:
             user_data = await state.get_data()
             name = user_data.get("name")
@@ -229,10 +279,10 @@ def register_handlers(dp: Dispatcher, bot: Bot, admin_id: int):
                 )
                 time_field = "💪🏼 Вы волонтер"
                 extra_info = ""
+                time_field = "💪🏼 " + time_field.split(" ")[2].capitalize()
                 user_message = messages["registration_success"].format(
                     name=name, time_field=time_field, extra_info=extra_info
                 )
-                time_field = "💪🏼 " + time_field.split(" ")[2].capitalize()
                 await callback_query.message.answer(user_message)
                 admin_message = messages["admin_notification"].format(
                     name=name,
@@ -244,7 +294,7 @@ def register_handlers(dp: Dispatcher, bot: Bot, admin_id: int):
                 await bot.send_message(chat_id=admin_id, text=admin_message)
                 try:
                     image_path = config.get(
-                        "sponsor_image_path", "/app/images/sponsor_image.jpg"
+                        "sponsor_image_path", "/app/images/sponsor_image.jpeg"
                     )
                     if os.path.exists(image_path):
                         await bot.send_photo(
@@ -270,6 +320,8 @@ def register_handlers(dp: Dispatcher, bot: Bot, admin_id: int):
                 )
                 participant_count = get_participant_count()
                 logger.info(f"Всего участников: {participant_count}")
+                # Delete from pending_registrations
+                delete_pending_registration(callback_query.from_user.id)
             else:
                 logger.error(
                     f"Ошибка регистрации для user_id={callback_query.from_user.id}"
@@ -277,6 +329,7 @@ def register_handlers(dp: Dispatcher, bot: Bot, admin_id: int):
                 await callback_query.message.answer(
                     "Ошибка при регистрации. Попробуйте снова."
                 )
+            await callback_query.answer()
             await state.clear()
 
     @dp.message(StateFilter(RegistrationForm.waiting_for_target_time))
@@ -312,7 +365,7 @@ def register_handlers(dp: Dispatcher, bot: Bot, admin_id: int):
             await bot.send_message(chat_id=admin_id, text=admin_message)
             try:
                 image_path = config.get(
-                    "sponsor_image_path", "/app/images/sponsor_image.jpg"
+                    "sponsor_image_path", "/app/images/sponsor_image.jpeg"
                 )
                 if os.path.exists(image_path):
                     await bot.send_photo(
@@ -338,6 +391,8 @@ def register_handlers(dp: Dispatcher, bot: Bot, admin_id: int):
             )
             participant_count = get_participant_count()
             logger.info(f"Всего участников: {participant_count}")
+            # Delete from pending_registrations
+            delete_pending_registration(message.from_user.id)
         else:
             logger.error(f"Ошибка регистрации для user_id={message.from_user.id}")
             await message.answer("Ошибка при регистрации. Попробуйте снова.")
@@ -408,7 +463,7 @@ def register_handlers(dp: Dispatcher, bot: Bot, admin_id: int):
         logger.info(f"Команда /paid от user_id={message.from_user.id}")
         parts = message.text.split()
         if len(parts) != 2 or not parts[1].isdigit():
-            await message.answer("Используйте: /paid &lt;ID пользователя&gt;")
+            await message.answer(messages["paid_usage"])
             return
         user_id = int(parts[1])
         participant = get_participant_by_user_id(user_id)
@@ -434,7 +489,7 @@ def register_handlers(dp: Dispatcher, bot: Bot, admin_id: int):
         logger.info(f"Команда /remove от user_id={message.from_user.id}")
         parts = message.text.split()
         if len(parts) != 2 or not parts[1].isdigit():
-            await message.answer("Используйте: /remove &lt;ID пользователя&gt;")
+            await message.answer(messages["remove_usage"])
             return
         user_id = int(parts[1])
         participant = get_participant_by_user_id(user_id)
@@ -487,10 +542,6 @@ def register_handlers(dp: Dispatcher, bot: Bot, admin_id: int):
         )
         logger.info(f"CSV-файл успешно отправлен для user_id={message.from_user.id}")
 
-    # @dp.message(Command("info"))
-    # async def show_info(message: Message):
-    #     logger.info(f"Команда /info от user_id={message.from_user.id}")
-    #     await message.answer(messages["info_message"])
     @dp.message(Command("info"))
     async def show_info(message: Message):
         logger.info(f"Команда /info от user_id={message.from_user.id}")
@@ -575,30 +626,6 @@ def register_handlers(dp: Dispatcher, bot: Bot, admin_id: int):
             await message.answer("Ошибка при сохранении афиши. Попробуйте снова.")
         await state.clear()
 
-    @dp.message(Command("delete_afisha"))
-    async def delete_afisha(message: Message):
-        logger.info(f"Команда /delete_afisha от user_id={message.from_user.id}")
-        if message.from_user.id != admin_id:
-            logger.warning(
-                f"Доступ к /delete_afisha запрещен для user_id={message.from_user.id}"
-            )
-            await message.answer(messages["delete_afisha_access_denied"])
-            return
-        afisha_path = "/app/images/afisha.jpeg"
-        try:
-            if os.path.exists(afisha_path):
-                os.remove(afisha_path)
-                logger.info(f"Афиша удалена: {afisha_path}")
-                await message.answer(messages["delete_afisha_success"])
-            else:
-                logger.info(f"Афиша не найдена: {afisha_path}")
-                await message.answer(messages["delete_afisha_not_found"])
-        except Exception as e:
-            logger.error(
-                f"Ошибка при удалении афиши для user_id={message.from_user.id}: {e}"
-            )
-            await message.answer("Ошибка при удалении афиши. Попробуйте снова.")
-
     @dp.message(Command("update_sponsor"))
     async def update_sponsor(message: Message, state: FSMContext):
         logger.info(f"Команда /update_sponsor от user_id={message.from_user.id}")
@@ -633,6 +660,64 @@ def register_handlers(dp: Dispatcher, bot: Bot, admin_id: int):
                 "Ошибка при сохранении изображения спонсоров. Попробуйте снова."
             )
         await state.clear()
+
+    @dp.message(Command("edit_runners"))
+    async def edit_runners(message: Message):
+        logger.info(f"Команда /edit_runners от user_id={message.from_user.id}")
+        if message.from_user.id != admin_id:
+            logger.warning(
+                f"Доступ к /edit_runners запрещен для user_id={message.from_user.id}"
+            )
+            await message.answer(messages["edit_runners_access_denied"])
+            return
+        parts = message.text.split()
+        if len(parts) != 2 or not parts[1].isdigit():
+            await message.answer(messages["edit_runners_usage"])
+            return
+        new_max_runners = int(parts[1])
+        if new_max_runners < 0:
+            await message.answer(messages["edit_runners_invalid"])
+            return
+        old_max_runners = config["max_runners"]
+        config["max_runners"] = new_max_runners
+        try:
+            with open("config.json", "w", encoding="utf-8") as f:
+                json.dump(config, f, ensure_ascii=False, indent=2)
+            logger.info(
+                f"Лимит бегунов изменен с {old_max_runners} на {new_max_runners}"
+            )
+            await message.answer(
+                messages["edit_runners_success"].format(
+                    old=old_max_runners, new=new_max_runners
+                )
+            )
+            # Notify pending users if limit increased
+            if new_max_runners > old_max_runners:
+                current_runners = get_participant_count_by_role("runner")
+                available_slots = new_max_runners - current_runners
+                if available_slots > 0:
+                    pending_users = get_pending_registrations()
+                    for user_id in pending_users:
+                        try:
+                            await bot.send_message(
+                                chat_id=user_id,
+                                text=messages["new_slots_notification"].format(
+                                    slots=available_slots
+                                ),
+                            )
+                            logger.info(
+                                f"Уведомление о новых слотах ({available_slots}) отправлено пользователю user_id={user_id}"
+                            )
+                            delete_pending_registration(user_id)
+                        except Exception as e:
+                            logger.error(
+                                f"Ошибка при отправке уведомления пользователю user_id={user_id}: {e}"
+                            )
+        except Exception as e:
+            logger.error(f"Ошибка при обновлении config.json: {e}")
+            await message.answer(
+                "Ошибка при изменении лимита бегунов. Попробуйте снова."
+            )
 
     @dp.message()
     async def handle_other_messages(message: Message):

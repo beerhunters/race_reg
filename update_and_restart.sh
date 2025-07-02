@@ -20,7 +20,7 @@ if ! git pull >> "$LOG_FILE" 2>&1; then
 fi
 echo "[$(date '+%Y-%m-%d %H:%M:%S')] git pull успешно выполнен" >> "$LOG_FILE"
 
-# Проверяем конфигурацию
+# Проверка конфигурации
 echo "Проверка конфигурации..."
 if [ ! -f "check_config.sh" ]; then
   echo "Ошибка: Файл check_config.sh не найден."
@@ -36,7 +36,16 @@ if ! ./check_config.sh >> "$LOG_FILE" 2>&1; then
 fi
 echo "[$(date '+%Y-%m-%d %H:%M:%S')] Проверка конфигурации успешно пройдена" >> "$LOG_FILE"
 
-# Перезапускаем контейнер
+# Пересборка образа
+echo "Пересборка Docker-образа..."
+if ! docker-compose build >> "$LOG_FILE" 2>&1; then
+  echo "Ошибка: Не удалось пересобрать образ. Проверьте логи в $LOG_FILE."
+  echo "[$(date '+%Y-%m-%d %H:%M:%S')] Ошибка при выполнении docker-compose build" >> "$LOG_FILE"
+  exit 1
+fi
+echo "[$(date '+%Y-%m-%d %H:%M:%S')] Docker-образ успешно пересобран" >> "$LOG_FILE"
+
+# Перезапуск контейнера
 echo "Перезапуск контейнера..."
 if ! docker-compose down >> "$LOG_FILE" 2>&1; then
   echo "Ошибка: Не удалось остановить контейнер. Проверьте логи в $LOG_FILE."
