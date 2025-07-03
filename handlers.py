@@ -151,7 +151,8 @@ def register_handlers(dp: Dispatcher, bot: Bot, admin_id: int):
                     f"Афиша отправлена с текстом start_message пользователю user_id={message.from_user.id}"
                 )
             else:
-                await message.answer(messages["start_message"])
+                if message.from_user.id != admin_id:
+                    await message.answer(messages["start_message"])
                 logger.info(
                     f"Афиша не найдена, отправлен только текст start_message пользователю user_id={message.from_user.id}"
                 )
