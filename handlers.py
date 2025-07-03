@@ -436,6 +436,53 @@ def register_handlers(dp: Dispatcher, bot: Bot, admin_id: int):
         for chunk in chunks:
             await message.answer(chunk)
 
+    @dp.message(Command("pending"))
+    async def show_pending_registrations(message: Message):
+        logger.info(f"Команда /pending от user_id={message.from_user.id}")
+        if message.from_user.id != admin_id:
+            logger.warning(
+                f"Доступ к /pending запрещен для user_id={message.from_user.id}"
+            )
+            await message.answer(messages["pending_access_denied"])
+            return
+        pending_users = get_pending_registrations()
+        if not pending_users:
+            await message.answer(messages["pending_empty"])
+            logger.info("Список pending_registrations пуст")
+            return
+        pending_list = messages["pending_list_header"]
+        chunks = []
+        current_chunk = pending_list
+        try:
+            with sqlite3.connect("/app/data/race_participants.db") as conn:
+                cursor = conn.cursor()
+                for index, user_id in enumerate(pending_users, 1):
+                    cursor.execute(
+                        "SELECT username FROM participants WHERE user_id = ?",
+                        (user_id,),
+                    )
+                    result = cursor.fetchone()
+                    username = result[0] if result and result[0] else None
+                    user_display = (
+                        f"@{username}"
+                        if username
+                        else f"<a href='tg://user?id={user_id}'>{user_id}</a>"
+                    )
+                    pending_info = messages["pending_info"].format(
+                        index=index, user_display=user_display, user_id=user_id
+                    )
+                    if len(current_chunk) + len(pending_info) > 4000:
+                        chunks.append(current_chunk)
+                        current_chunk = pending_list
+                    current_chunk += pending_info
+        except sqlite3.Error as e:
+            logger.error(f"Ошибка при получении pending_registrations: {e}")
+            await message.answer("Ошибка при получении списка. Попробуйте снова.")
+            return
+        chunks.append(current_chunk)
+        for chunk in chunks:
+            await message.answer(chunk, parse_mode="HTML")
+
     @dp.message(Command("stats", "статистика"))
     async def show_stats(message: Message):
         logger.info(f"Команда /stats от user_id={message.from_user.id}")
