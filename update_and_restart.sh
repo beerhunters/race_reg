@@ -130,7 +130,7 @@ if [ -f "data/race_participants.db" ]; then
     chmod 666 data/race_participants.db
     echo "Права доступа для data/race_participants.db установлены (666)."
     # Verify participants table schema
-    columns=$(docker exec beermile_reg-bot-1 sqlite3 /app/data/race_participants.db "PRAGMA table_info(participants)" | grep bib_number)
+    columns=$(docker exec race_reg-bot-1 sqlite3 /app/data/race_participants.db "PRAGMA table_info(participants)" | grep bib_number)
     if [ -z "$columns" ]; then
         echo "Предупреждение: Столбец bib_number отсутствует в таблице participants. Убедитесь, что база данных обновлена."
     else
