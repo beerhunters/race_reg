@@ -258,6 +258,23 @@ def register_handlers(dp: Dispatcher, bot: Bot, admin_id: int):
         if current_count >= max_count:
             logger.info(f"Лимит для роли {role} достигнут: {current_count}/{max_count}")
             await callback_query.message.answer(messages[f"limit_exceeded_{role}"])
+            if role == "runner":
+                try:
+                    await bot.send_message(
+                        chat_id=admin_id,
+                        text=messages["admin_limit_exceeded_notification"].format(
+                            max_runners=max_count,
+                            user_id=callback_query.from_user.id,
+                            username=callback_query.from_user.username or "не указан",
+                        ),
+                    )
+                    logger.info(
+                        f"Уведомление о превышении лимита бегунов отправлено администратору (admin_id={admin_id})"
+                    )
+                except Exception as e:
+                    logger.error(
+                        f"Ошибка при отправке уведомления администратору (admin_id={admin_id}): {e}"
+                    )
             await callback_query.answer()
             await state.clear()
             return
