@@ -421,6 +421,7 @@ def register_handlers(dp: Dispatcher, bot: Bot, admin_id: int):
             bib_field = f"№{bib_number}" if bib_number is not None else "№ не присвоен"
             participant_info = messages["participant_info"].format(
                 index=index,
+                user_id=user_id,
                 name=name,
                 target_time=target_time,
                 role=role,
@@ -487,26 +488,33 @@ def register_handlers(dp: Dispatcher, bot: Bot, admin_id: int):
     @dp.message(Command("stats", "статистика"))
     async def show_stats(message: Message):
         logger.info(f"Команда /stats от user_id={message.from_user.id}")
-        with sqlite3.connect("/app/data/race_participants.db") as conn:
-            cursor = conn.cursor()
-            cursor.execute("SELECT COUNT(*) FROM participants")
-            total_count = cursor.fetchone()[0]
-            cursor.execute(
-                'SELECT COUNT(*) FROM participants WHERE payment_status = "paid"'
+        try:
+            with sqlite3.connect("/app/data/race_participants.db") as conn:
+                cursor = conn.cursor()
+                cursor.execute(
+                    "SELECT COUNT(*) FROM participants WHERE payment_status = 'paid'"
+                )
+                paid_count = cursor.fetchone()[0]
+                cursor.execute(
+                    "SELECT COUNT(*) FROM participants WHERE role = 'runner'"
+                )
+                runner_count = cursor.fetchone()[0]
+                cursor.execute(
+                    "SELECT COUNT(*) FROM participants WHERE role = 'volunteer'"
+                )
+                volunteer_count = cursor.fetchone()[0]
+                cursor.execute("SELECT COUNT(*) FROM pending_registrations")
+                pending_reg_count = cursor.fetchone()[0]
+            stats_message = messages["stats_message"].format(
+                paid=paid_count,
+                runners=runner_count,
+                volunteers=volunteer_count,
+                pending_reg=pending_reg_count,
             )
-            paid_count = cursor.fetchone()[0]
-            cursor.execute(
-                'SELECT COUNT(*) FROM participants WHERE payment_status = "pending"'
-            )
-            pending_count = cursor.fetchone()[0]
-            cursor.execute(
-                'SELECT COUNT(*) FROM participants WHERE DATE(reg_date) = DATE("now")'
-            )
-            today_count = cursor.fetchone()[0]
-        stats_message = messages["stats_message"].format(
-            total=total_count, paid=paid_count, pending=pending_count, today=today_count
-        )
-        await message.answer(stats_message)
+            await message.answer(stats_message)
+        except sqlite3.Error as e:
+            logger.error(f"Ошибка при получении статистики: {e}")
+            await message.answer("Ошибка при получении статистики. Попробуйте снова.")
 
     @dp.message(Command("paid"))
     async def mark_as_paid(message: Message):
