@@ -139,28 +139,6 @@ def register_handlers(dp: Dispatcher, bot: Bot, admin_id: int):
     @dp.message(CommandStart())
     async def cmd_start(message: Message, state: FSMContext):
         logger.info(f"Команда /start от user_id={message.from_user.id}")
-        afisha_path = "/app/images/afisha.jpeg"
-        try:
-            if os.path.exists(afisha_path):
-                await bot.send_photo(
-                    chat_id=message.from_user.id,
-                    photo=FSInputFile(afisha_path),
-                    caption=messages["start_message"],
-                )
-                logger.info(
-                    f"Афиша отправлена с текстом start_message пользователю user_id={message.from_user.id}"
-                )
-            else:
-                if message.from_user.id != admin_id:
-                    await message.answer(messages["start_message"])
-                logger.info(
-                    f"Афиша не найдена, отправлен только текст start_message пользователю user_id={message.from_user.id}"
-                )
-        except Exception as e:
-            logger.error(
-                f"Ошибка при отправке сообщения /start пользователю user_id={message.from_user.id}: {e}"
-            )
-            await message.answer(messages["start_message"])
         if message.from_user.id == admin_id:
             logger.info(
                 f"Пользователь user_id={message.from_user.id} является администратором"
@@ -197,6 +175,27 @@ def register_handlers(dp: Dispatcher, bot: Bot, admin_id: int):
             )
             await state.clear()
             return
+        afisha_path = "/app/images/afisha.jpeg"
+        try:
+            if os.path.exists(afisha_path):
+                await bot.send_photo(
+                    chat_id=message.from_user.id,
+                    photo=FSInputFile(afisha_path),
+                    caption=messages["start_message"],
+                )
+                logger.info(
+                    f"Афиша отправлена с текстом start_message пользователю user_id={message.from_user.id}"
+                )
+            else:
+                await message.answer(messages["start_message"])
+                logger.info(
+                    f"Афиша не найдена, отправлен только текст start_message пользователю user_id={message.from_user.id}"
+                )
+        except Exception as e:
+            logger.error(
+                f"Ошибка при отправке сообщения /start пользователю user_id={message.from_user.id}: {e}"
+            )
+            await message.answer(messages["start_message"])
         success = add_pending_registration(message.from_user.id)
         if not success:
             logger.error(
