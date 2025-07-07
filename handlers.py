@@ -30,6 +30,8 @@ from database import (
     get_pending_registrations,
     delete_pending_registration,
     set_bib_number,
+    get_setting,
+    set_setting,
 )
 
 
@@ -74,7 +76,6 @@ logging.basicConfig(
     ],
 )
 logger = logging.getLogger(__name__)
-
 try:
     with open("messages.json", "r", encoding="utf-8") as f:
         messages = json.load(f)
@@ -85,7 +86,6 @@ except FileNotFoundError:
 except json.JSONDecodeError as e:
     logger.error(f"Ошибка при разборе messages.json: {e}")
     raise
-
 try:
     with open("config.json", "r", encoding="utf-8") as f:
         config = json.load(f)
@@ -96,7 +96,6 @@ except FileNotFoundError:
 except json.JSONDecodeError as e:
     logger.error(f"Ошибка при разборе config.json: {e}")
     raise
-
 if config.get("log_level") not in log_level:
     logger.error(
         f"Недопустимое значение log_level: {config.get('log_level')}. Используется ERROR."
@@ -471,7 +470,6 @@ def register_handlers(dp: Dispatcher, bot: Bot, admin_id: int):
         role = participant[4]
         payment_status = participant[6]
         username = callback_query.from_user.username or "не указан"
-
         if callback_query.data == "confirm_participation":
             if role == "volunteer":
                 await callback_query.message.answer(
@@ -487,7 +485,7 @@ def register_handlers(dp: Dispatcher, bot: Bot, admin_id: int):
                     "admin_volunteer_confirm_notification",
                     "Пользователь {name} (@{username}) подтвердил участие как волонтёр.",
                 ).format(name=name, username=username)
-            else:  # role == "runner"
+            else:
                 if payment_status == "paid":
                     await callback_query.message.answer(
                         messages["confirm_paid_message"]
@@ -517,7 +515,6 @@ def register_handlers(dp: Dispatcher, bot: Bot, admin_id: int):
                 logger.error(
                     f"Ошибка при отправке уведомления администратору (admin_id={admin_id}): {e}"
                 )
-
         elif callback_query.data == "decline_participation":
             success = delete_participant(callback_query.from_user.id)
             if success:
@@ -551,7 +548,6 @@ def register_handlers(dp: Dispatcher, bot: Bot, admin_id: int):
                 await callback_query.message.answer(
                     "Ошибка при обработке отказа. Попробуйте снова."
                 )
-
         try:
             await callback_query.message.delete()
             logger.info(
@@ -561,7 +557,6 @@ def register_handlers(dp: Dispatcher, bot: Bot, admin_id: int):
             logger.warning(
                 f"Не удалось удалить сообщение для user_id={callback_query.from_user.id}: {e}"
             )
-
         await callback_query.answer()
         await state.clear()
 
@@ -611,8 +606,18 @@ def register_handlers(dp: Dispatcher, bot: Bot, admin_id: int):
         role = "runner" if callback_query.data == "role_runner" else "volunteer"
         logger.info(f"Выбрана роль: {role} для user_id={callback_query.from_user.id}")
         max_count = (
-            config["max_runners"] if role == "runner" else config["max_volunteers"]
+            get_setting("max_runners")
+            if role == "runner"
+            else get_setting("max_volunteers")
         )
+        if max_count is None:
+            logger.error(f"Не найдена настройка max_{role}s в базе данных")
+            await callback_query.message.answer(
+                "Ошибка конфигурации. Свяжитесь с администратором."
+            )
+            await callback_query.answer()
+            await state.clear()
+            return
         current_count = get_participant_count_by_role(role)
         if current_count >= max_count:
             logger.info(f"Лимит для роли {role} достигнут: {current_count}/{max_count}")
@@ -1014,10 +1019,11 @@ def register_handlers(dp: Dispatcher, bot: Bot, admin_id: int):
         user_id = int(parts[1])
         participant = get_participant_by_user_id(user_id)
         if participant:
-            name = participant[2]
             success = delete_participant(user_id)
             if success:
-                await message.answer(messages["remove_success"].format(name=name))
+                await message.answer(
+                    messages["remove_success"].format(name=participant[2])
+                )
                 try:
                     await bot.send_message(
                         chat_id=user_id, text=messages["remove_user_notification"]
@@ -1229,7 +1235,11 @@ def register_handlers(dp: Dispatcher, bot: Bot, admin_id: int):
         if new_max_runners < 0:
             await message.answer(messages["edit_runners_invalid"])
             return
-        old_max_runners = config["max_runners"]
+        old_max_runners = get_setting("max_runners")
+        if old_max_runners is None:
+            logger.error("Не найдена настройка max_runners в базе данных")
+            await message.answer("Ошибка конфигурации. Свяжитесь с администратором.")
+            return
         current_runners = get_participant_count_by_role("runner")
         if new_max_runners < old_max_runners:
             if new_max_runners < current_runners:
@@ -1242,10 +1252,8 @@ def register_handlers(dp: Dispatcher, bot: Bot, admin_id: int):
                     )
                 )
                 return
-        config["max_runners"] = new_max_runners
-        try:
-            with open("config.json", "w", encoding="utf-8") as f:
-                json.dump(config, f, ensure_ascii=False, indent=2)
+        success = set_setting("max_runners", new_max_runners)
+        if success:
             logger.info(
                 f"Лимит бегунов изменен с {old_max_runners} на {new_max_runners}"
             )
@@ -1274,8 +1282,8 @@ def register_handlers(dp: Dispatcher, bot: Bot, admin_id: int):
                             logger.error(
                                 f"Ошибка при отправке уведомления пользователю user_id={user_id}: {e}"
                             )
-        except Exception as e:
-            logger.error(f"Ошибка при обновлении config.json: {e}")
+        else:
+            logger.error("Ошибка при обновлении настройки max_runners")
             await message.answer(
                 "Ошибка при изменении лимита бегунов. Попробуйте снова."
             )
