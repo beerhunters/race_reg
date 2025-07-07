@@ -114,6 +114,8 @@ class RegistrationForm(StatesGroup):
     waiting_for_info_message = State()
     waiting_for_afisha_image = State()
     waiting_for_sponsor_image = State()
+    waiting_for_notify_with_text_message = State()
+    waiting_for_notify_unpaid_message = State()
     processed = State()
 
 
@@ -291,12 +293,157 @@ def register_handlers(dp: Dispatcher, bot: Bot, admin_id: int):
                     )
                 logger.info(f"Уведомление отправлено пользователю user_id={user_id}")
                 success_count += 1
-            except Exception as e:
+            except TelegramBadRequest as e:
                 logger.error(
                     f"Ошибка при отправке уведомления пользователю user_id={user_id}: {e}"
                 )
         await message.answer(messages["notify_all_success"].format(count=success_count))
         logger.info(f"Уведомления отправлены {success_count} участникам")
+
+    @dp.message(Command("notify_with_text"))
+    async def notify_with_text(message: Message, state: FSMContext):
+        logger.info(f"Команда /notify_with_text от user_id={message.from_user.id}")
+        if message.from_user.id != admin_id:
+            logger.warning(
+                f"Доступ к /notify_with_text запрещен для user_id={message.from_user.id}"
+            )
+            await message.answer(messages["notify_with_text_access_denied"])
+            return
+        participants = get_all_participants()
+        if not participants:
+            logger.info("Нет зарегистрированных участников для уведомления")
+            await message.answer(messages["notify_with_text_no_participants"])
+            return
+        await message.answer(messages["notify_with_text_prompt"])
+        await state.set_state(RegistrationForm.waiting_for_notify_with_text_message)
+
+    @dp.message(StateFilter(RegistrationForm.waiting_for_notify_with_text_message))
+    async def process_notify_with_text_message(message: Message, state: FSMContext):
+        logger.info(
+            f"Получен текст рассылки для /notify_with_text от user_id={message.from_user.id}"
+        )
+        notify_text = message.text.strip()
+        if len(notify_text) > 4096:
+            logger.warning(
+                f"Текст рассылки слишком длинный: {len(notify_text)} символов"
+            )
+            await message.answer("Текст слишком длинный. Максимум 4096 символов.")
+            await state.clear()
+            return
+        participants = get_all_participants()
+        success_count = 0
+        afisha_path = "/app/images/afisha.jpeg"
+        for participant in participants:
+            user_id = participant[0]
+            try:
+                if os.path.exists(afisha_path):
+                    await bot.send_photo(
+                        chat_id=user_id,
+                        photo=FSInputFile(afisha_path),
+                        caption=notify_text,
+                        parse_mode="HTML",
+                    )
+                else:
+                    await bot.send_message(
+                        chat_id=user_id, text=notify_text, parse_mode="HTML"
+                    )
+                logger.info(f"Уведомление отправлено пользователю user_id={user_id}")
+                success_count += 1
+            except TelegramBadRequest as e:
+                logger.error(
+                    f"Ошибка при отправке уведомления пользователю user_id={user_id}: {e}"
+                )
+        await message.answer(
+            messages["notify_with_text_success"].format(count=success_count)
+        )
+        logger.info(f"Уведомления отправлены {success_count} участникам")
+        await state.clear()
+
+    @dp.message(Command("notify_unpaid"))
+    async def notify_unpaid_participants(message: Message, state: FSMContext):
+        logger.info(f"Команда /notify_unpaid от user_id={message.from_user.id}")
+        if message.from_user.id != admin_id:
+            logger.warning(
+                f"Доступ к /notify_unpaid запрещен для user_id={message.from_user.id}"
+            )
+            await message.answer(messages["notify_unpaid_access_denied"])
+            return
+        try:
+            with sqlite3.connect("/app/data/race_participants.db", timeout=10) as conn:
+                cursor = conn.cursor()
+                cursor.execute(
+                    "SELECT user_id, username, name, target_time, role, reg_date, payment_status, bib_number "
+                    "FROM participants WHERE payment_status = 'pending' AND role = 'runner'"
+                )
+                unpaid_participants = cursor.fetchall()
+        except sqlite3.Error as e:
+            logger.error(f"Ошибка при получении списка неоплативших участников: {e}")
+            await message.answer(
+                "Ошибка при получении списка участников. Попробуйте снова."
+            )
+            return
+        if not unpaid_participants:
+            logger.info("Нет участников с неоплаченным статусом")
+            await message.answer(messages["notify_unpaid_no_participants"])
+            return
+        await message.answer(messages["notify_unpaid_prompt"])
+        await state.set_state(RegistrationForm.waiting_for_notify_unpaid_message)
+
+    @dp.message(StateFilter(RegistrationForm.waiting_for_notify_unpaid_message))
+    async def process_notify_unpaid_message(message: Message, state: FSMContext):
+        logger.info(
+            f"Получен текст рассылки для /notify_unpaid от user_id={message.from_user.id}"
+        )
+        notify_text = message.text.strip()
+        if len(notify_text) > 4096:
+            logger.warning(
+                f"Текст рассылки слишком длинный: {len(notify_text)} символов"
+            )
+            await message.answer("Текст слишком длинный. Максимум 4096 символов.")
+            await state.clear()
+            return
+        try:
+            with sqlite3.connect("/app/data/race_participants.db", timeout=10) as conn:
+                cursor = conn.cursor()
+                cursor.execute(
+                    "SELECT user_id, username, name, target_time, role, reg_date, payment_status, bib_number "
+                    "FROM participants WHERE payment_status = 'pending' AND role = 'runner'"
+                )
+                unpaid_participants = cursor.fetchall()
+        except sqlite3.Error as e:
+            logger.error(f"Ошибка при получении списка неоплативших участников: {e}")
+            await message.answer("Ошибка при отправке уведомлений. Попробуйте снова.")
+            await state.clear()
+            return
+        success_count = 0
+        afisha_path = "/app/images/afisha.jpeg"
+        for participant in unpaid_participants:
+            user_id = participant[0]
+            try:
+                if os.path.exists(afisha_path):
+                    await bot.send_photo(
+                        chat_id=user_id,
+                        photo=FSInputFile(afisha_path),
+                        caption=notify_text,
+                        parse_mode="HTML",
+                    )
+                else:
+                    await bot.send_message(
+                        chat_id=user_id, text=notify_text, parse_mode="HTML"
+                    )
+                logger.info(
+                    f"Уведомление отправлено неоплатившему пользователю user_id={user_id}"
+                )
+                success_count += 1
+            except TelegramBadRequest as e:
+                logger.error(
+                    f"Ошибка при отправке уведомления пользователю user_id={user_id}: {e}"
+                )
+        await message.answer(
+            messages["notify_unpaid_success"].format(count=success_count)
+        )
+        logger.info(f"Уведомления отправлены {success_count} неоплатившим участникам")
+        await state.clear()
 
     @dp.callback_query(F.data.in_(["confirm_participation", "decline_participation"]))
     async def process_participation_response(callback_query, state: FSMContext):
