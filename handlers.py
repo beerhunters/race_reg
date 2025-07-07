@@ -969,11 +969,9 @@ def register_handlers(dp: Dispatcher, bot: Bot, admin_id: int):
                     index=index,
                     user_id=user_id,
                     name=name,
-                    target_time=target_time,
                     role=role,
                     date=formatted_date,
                     username=username,
-                    bib_number=bib_field,
                 )
             if len(current_chunk) + len(participant_info) > 4000:
                 chunks.append(current_chunk)
