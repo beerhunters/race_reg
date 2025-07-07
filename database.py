@@ -181,15 +181,35 @@ def set_bib_number(user_id: int, bib_number: int):
         return False
 
 
-def delete_participant(user_id: int):
+def delete_participant(user_id: int) -> bool:
     try:
-        with sqlite3.connect(DB_PATH) as conn:
+        with sqlite3.connect(DB_PATH, timeout=10) as conn:
             cursor = conn.cursor()
+            # Проверяем наличие пользователя
+            cursor.execute(
+                "SELECT user_id FROM participants WHERE user_id = ?", (user_id,)
+            )
+            if not cursor.fetchone():
+                logger.warning(
+                    f"Пользователь user_id={user_id} не найден в participants"
+                )
+                return False
+            # Выполняем удаление
             cursor.execute("DELETE FROM participants WHERE user_id = ?", (user_id,))
             conn.commit()
-            logger.info(f"Участник удалён: user_id={user_id}")
+            if cursor.rowcount > 0:
+                logger.info(
+                    f"Пользователь user_id={user_id} успешно удалён из participants"
+                )
+                return True
+            else:
+                logger.error(
+                    f"Не удалось удалить пользователя user_id={user_id}: rowcount=0"
+                )
+                return False
     except sqlite3.Error as e:
-        logger.error(f"Ошибка при удалении участника user_id={user_id}: {e}")
+        logger.error(f"Ошибка SQLite при удалении пользователя user_id={user_id}: {e}")
+        return False
 
 
 def get_participant_by_user_id(user_id: int):
