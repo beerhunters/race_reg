@@ -1,13 +1,11 @@
+import json
 import sqlite3
 import logging
-import json
-import datetime
+import os
 
 logger = logging.getLogger(__name__)
-
 DB_PATH = "/app/data/race_participants.db"
 
-# Load config
 try:
     with open("config.json", "r", encoding="utf-8") as f:
         config = json.load(f)
@@ -21,10 +19,10 @@ except json.JSONDecodeError as e:
 
 
 def init_db():
+    os.makedirs(os.path.dirname(DB_PATH), exist_ok=True)
     try:
         with sqlite3.connect(DB_PATH) as conn:
             cursor = conn.cursor()
-            # Create participants table with bib_number
             cursor.execute(
                 """
                 CREATE TABLE IF NOT EXISTS participants (
@@ -39,63 +37,35 @@ def init_db():
                 )
             """
             )
-            # Create pending_registrations table
             cursor.execute(
                 """
                 CREATE TABLE IF NOT EXISTS pending_registrations (
-                    user_id INTEGER PRIMARY KEY,
-                    timestamp TEXT
+                    user_id INTEGER PRIMARY KEY
                 )
             """
             )
-            # Add bib_number column to existing participants table if not exists
-            cursor.execute(
-                """
-                PRAGMA table_info(participants)
-            """
-            )
-            columns = [info[1] for info in cursor.fetchall()]
-            if "bib_number" not in columns:
-                cursor.execute(
-                    """
-                    ALTER TABLE participants ADD COLUMN bib_number INTEGER
-                """
-                )
-                logger.info("Столбец bib_number добавлен в таблицу participants")
             conn.commit()
-            logger.info("База данных инициализирована")
+            cursor.execute("PRAGMA table_info(participants)")
+            columns = [info[1] for info in cursor.fetchall()]
+            expected_columns = [
+                "user_id",
+                "username",
+                "name",
+                "target_time",
+                "role",
+                "reg_date",
+                "payment_status",
+                "bib_number",
+            ]
+            if columns != expected_columns:
+                logger.error(
+                    f"Структура таблицы participants не соответствует ожидаемой: {columns}"
+                )
+                raise ValueError("Неверная структура таблицы participants")
+            logger.info("База данных успешно инициализирована")
     except sqlite3.Error as e:
         logger.error(f"Ошибка при инициализации базы данных: {e}")
         raise
-
-
-def add_participant(
-    user_id: int, username: str, name: str, target_time: str, role: str
-):
-    try:
-        with sqlite3.connect(DB_PATH) as conn:
-            cursor = conn.cursor()
-            cursor.execute(
-                """
-                INSERT INTO participants (user_id, username, name, target_time, role, reg_date, payment_status, bib_number)
-                VALUES (?, ?, ?, ?, ?, ?, ?, NULL)
-            """,
-                (
-                    user_id,
-                    username,
-                    name,
-                    target_time,
-                    role,
-                    datetime.datetime.now().isoformat(),
-                    "pending",
-                ),
-            )
-            conn.commit()
-            logger.info(f"Участник user_id={user_id} успешно добавлен")
-            return True
-    except sqlite3.Error as e:
-        logger.error(f"Ошибка при добавлении участника user_id={user_id}: {e}")
-        return False
 
 
 def add_pending_registration(user_id: int):
@@ -103,20 +73,15 @@ def add_pending_registration(user_id: int):
         with sqlite3.connect(DB_PATH) as conn:
             cursor = conn.cursor()
             cursor.execute(
-                """
-                INSERT OR IGNORE INTO pending_registrations (user_id, timestamp)
-                VALUES (?, ?)
-            """,
-                (user_id, datetime.datetime.now().isoformat()),
+                "INSERT OR IGNORE INTO pending_registrations (user_id) VALUES (?)",
+                (user_id,),
             )
             conn.commit()
-            logger.info(
-                f"Пользователь user_id={user_id} добавлен в pending_registrations"
-            )
+            logger.info(f"Добавлена незавершённая регистрация для user_id={user_id}")
             return True
     except sqlite3.Error as e:
         logger.error(
-            f"Ошибка при добавлении user_id={user_id} в pending_registrations: {e}"
+            f"Ошибка при добавлении в pending_registrations для user_id={user_id}: {e}"
         )
         return False
 
@@ -127,7 +92,6 @@ def get_pending_registrations():
             cursor = conn.cursor()
             cursor.execute("SELECT user_id FROM pending_registrations")
             pending = cursor.fetchall()
-            logger.info(f"Получено {len(pending)} записей из pending_registrations")
             return [row[0] for row in pending]
     except sqlite3.Error as e:
         logger.error(f"Ошибка при получении pending_registrations: {e}")
@@ -142,15 +106,11 @@ def delete_pending_registration(user_id: int):
                 "DELETE FROM pending_registrations WHERE user_id = ?", (user_id,)
             )
             conn.commit()
-            logger.info(
-                f"Пользователь user_id={user_id} удален из pending_registrations"
-            )
-            return True
+            logger.info(f"Удалена незавершённая регистрация для user_id={user_id}")
     except sqlite3.Error as e:
         logger.error(
-            f"Ошибка при удалении user_id={user_id} из pending_registrations: {e}"
+            f"Ошибка при удалении pending_registrations для user_id={user_id}: {e}"
         )
-        return False
 
 
 def get_all_participants():
@@ -158,10 +118,9 @@ def get_all_participants():
         with sqlite3.connect(DB_PATH) as conn:
             cursor = conn.cursor()
             cursor.execute(
-                "SELECT user_id, username, name, target_time, role, reg_date, payment_status, bib_number FROM participants"
+                "SELECT * FROM participants ORDER BY role = 'runner' DESC, reg_date ASC"
             )
             participants = cursor.fetchall()
-            logger.info(f"Получено {len(participants)} участников")
             return participants
     except sqlite3.Error as e:
         logger.error(f"Ошибка при получении списка участников: {e}")
@@ -174,7 +133,6 @@ def get_participant_count():
             cursor = conn.cursor()
             cursor.execute("SELECT COUNT(*) FROM participants")
             count = cursor.fetchone()[0]
-            logger.info(f"Общее количество участников: {count}")
             return count
     except sqlite3.Error as e:
         logger.error(f"Ошибка при получении количества участников: {e}")
@@ -187,7 +145,6 @@ def get_participant_count_by_role(role: str):
             cursor = conn.cursor()
             cursor.execute("SELECT COUNT(*) FROM participants WHERE role = ?", (role,))
             count = cursor.fetchone()[0]
-            logger.info(f"Количество участников с ролью {role}: {count}")
             return count
     except sqlite3.Error as e:
         logger.error(f"Ошибка при получении количества участников с ролью {role}: {e}")
@@ -203,7 +160,7 @@ def update_payment_status(user_id: int, status: str):
                 (status, user_id),
             )
             conn.commit()
-            logger.info(f"Статус оплаты для user_id={user_id} обновлен на {status}")
+            logger.info(f"Статус оплаты обновлён для user_id={user_id}: {status}")
     except sqlite3.Error as e:
         logger.error(f"Ошибка при обновлении статуса оплаты для user_id={user_id}: {e}")
 
@@ -216,28 +173,43 @@ def set_bib_number(user_id: int, bib_number: int):
                 "UPDATE participants SET bib_number = ? WHERE user_id = ?",
                 (bib_number, user_id),
             )
-            if cursor.rowcount == 0:
-                logger.warning(
-                    f"Участник user_id={user_id} не найден для присвоения номера"
-                )
-                return False
             conn.commit()
-            logger.info(f"Беговой номер {bib_number} присвоен для user_id={user_id}")
+            logger.info(f"Беговой номер {bib_number} установлен для user_id={user_id}")
             return True
     except sqlite3.Error as e:
-        logger.error(f"Ошибка при присвоении номера user_id={user_id}: {e}")
+        logger.error(f"Ошибка при установке бегового номера для user_id={user_id}: {e}")
         return False
 
 
-def delete_participant(user_id: int):
+def delete_participant(user_id: int) -> bool:
     try:
-        with sqlite3.connect(DB_PATH) as conn:
+        with sqlite3.connect(DB_PATH, timeout=10) as conn:
             cursor = conn.cursor()
+            # Проверяем наличие пользователя
+            cursor.execute(
+                "SELECT user_id FROM participants WHERE user_id = ?", (user_id,)
+            )
+            if not cursor.fetchone():
+                logger.warning(
+                    f"Пользователь user_id={user_id} не найден в participants"
+                )
+                return False
+            # Выполняем удаление
             cursor.execute("DELETE FROM participants WHERE user_id = ?", (user_id,))
             conn.commit()
-            logger.info(f"Участник user_id={user_id} удален")
+            if cursor.rowcount > 0:
+                logger.info(
+                    f"Пользователь user_id={user_id} успешно удалён из participants"
+                )
+                return True
+            else:
+                logger.error(
+                    f"Не удалось удалить пользователя user_id={user_id}: rowcount=0"
+                )
+                return False
     except sqlite3.Error as e:
-        logger.error(f"Ошибка при удалении участника user_id={user_id}: {e}")
+        logger.error(f"Ошибка SQLite при удалении пользователя user_id={user_id}: {e}")
+        return False
 
 
 def get_participant_by_user_id(user_id: int):
@@ -246,11 +218,35 @@ def get_participant_by_user_id(user_id: int):
             cursor = conn.cursor()
             cursor.execute("SELECT * FROM participants WHERE user_id = ?", (user_id,))
             participant = cursor.fetchone()
-            if participant:
-                logger.info(f"Участник user_id={user_id} найден")
-            else:
-                logger.info(f"Участник user_id={user_id} не найден")
             return participant
     except sqlite3.Error as e:
-        logger.error(f"Ошибка при поиске участника user_id={user_id}: {e}")
+        logger.error(f"Ошибка при получении участника user_id={user_id}: {e}")
         return None
+
+
+def add_participant(
+    user_id: int, username: str, name: str, target_time: str, role: str
+):
+    try:
+        with sqlite3.connect(DB_PATH) as conn:
+            cursor = conn.cursor()
+            cursor.execute(
+                """
+                INSERT INTO participants (user_id, username, name, target_time, role, reg_date, payment_status)
+                VALUES (?, ?, ?, ?, ?, datetime('now'), ?)
+                """,
+                (
+                    user_id,
+                    username,
+                    name,
+                    target_time,
+                    role,
+                    "pending" if role == "runner" else "paid",
+                ),
+            )
+            conn.commit()
+            logger.info(f"Участник добавлен: {name}, {role}, user_id={user_id}")
+            return True
+    except sqlite3.Error as e:
+        logger.error(f"Ошибка при добавлении участника user_id={user_id}: {e}")
+        return False
