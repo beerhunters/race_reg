@@ -958,7 +958,7 @@ def register_handlers(dp: Dispatcher, bot: Bot, admin_id: int):
                     user_id=user_id,
                     name=name,
                     target_time=target_time,
-                    role=role,
+                    # role=role,
                     date=formatted_date,
                     status=status_emoji,
                     username=username,
@@ -969,7 +969,7 @@ def register_handlers(dp: Dispatcher, bot: Bot, admin_id: int):
                     index=index,
                     user_id=user_id,
                     name=name,
-                    role=role,
+                    # role=role,
                     date=formatted_date,
                     username=username,
                 )
