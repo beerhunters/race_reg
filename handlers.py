@@ -317,6 +317,15 @@ def register_handlers(dp: Dispatcher, bot: Bot, admin_id: int):
             )
             await callback_query.message.answer("Вы не зарегистрированы.")
             await callback_query.answer()
+            try:
+                await callback_query.message.delete()
+                logger.info(
+                    f"Сообщение с кнопками удалено для user_id={callback_query.from_user.id}"
+                )
+            except TelegramBadRequest as e:
+                logger.warning(
+                    f"Не удалось удалить сообщение для user_id={callback_query.from_user.id}: {e}"
+                )
             return
         name = participant[2]
         role = participant[4]
@@ -402,6 +411,15 @@ def register_handlers(dp: Dispatcher, bot: Bot, admin_id: int):
                 await callback_query.message.answer(
                     "Ошибка при обработке отказа. Попробуйте снова."
                 )
+        try:
+            await callback_query.message.delete()
+            logger.info(
+                f"Сообщение с кнопками удалено для user_id={callback_query.from_user.id}"
+            )
+        except TelegramBadRequest as e:
+            logger.warning(
+                f"Не удалось удалить сообщение для user_id={callback_query.from_user.id}: {e}"
+            )
 
         await callback_query.answer()
         await state.clear()
