@@ -303,13 +303,6 @@ def register_handlers(dp: Dispatcher, bot: Bot, admin_id: int):
         logger.info(
             f"Обработка ответа на участие от user_id={callback_query.from_user.id}"
         )
-        user_id = callback_query.from_user.id
-        logger.info(f"Обработка ответа на участие от user_id={user_id}")
-        if await state.get_state() == "processed":
-            logger.warning(f"Повторный запрос от user_id={user_id}, игнорируется")
-            await callback_query.answer("Запрос уже обработан.")
-            return
-        await state.set_state("processed")
         participant = get_participant_by_user_id(callback_query.from_user.id)
         if not participant:
             logger.warning(
@@ -411,6 +404,7 @@ def register_handlers(dp: Dispatcher, bot: Bot, admin_id: int):
                 await callback_query.message.answer(
                     "Ошибка при обработке отказа. Попробуйте снова."
                 )
+
         try:
             await callback_query.message.delete()
             logger.info(
@@ -877,6 +871,17 @@ def register_handlers(dp: Dispatcher, bot: Bot, admin_id: int):
             success = delete_participant(user_id)
             if success:
                 await message.answer(messages["remove_success"].format(name=name))
+                try:
+                    await bot.send_message(
+                        chat_id=user_id, text=messages["remove_user_notification"]
+                    )
+                    logger.info(
+                        f"Уведомление об удалении отправлено пользователю user_id={user_id}"
+                    )
+                except TelegramBadRequest as e:
+                    logger.error(
+                        f"Ошибка при отправке уведомления об удалении пользователю user_id={user_id}: {e}"
+                    )
             else:
                 await message.answer("Ошибка при удалении участника. Попробуйте снова.")
         else:
