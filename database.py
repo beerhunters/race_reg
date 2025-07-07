@@ -251,7 +251,7 @@ def add_participant(
                     name,
                     target_time,
                     role,
-                    "pending" if role == "runner" else "paid",
+                    "pending" if role == "runner" else "-",
                 ),
             )
             conn.commit()
