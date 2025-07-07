@@ -136,6 +136,19 @@ def register_handlers(dp: Dispatcher, bot: Bot, admin_id: int):
         )
         return keyboard
 
+    def create_register_keyboard():
+        keyboard = InlineKeyboardMarkup(
+            inline_keyboard=[
+                [
+                    InlineKeyboardButton(
+                        text=messages["register_button"],
+                        callback_data="start_registration",
+                    )
+                ]
+            ]
+        )
+        return keyboard
+
     @dp.message(CommandStart())
     async def cmd_start(message: Message, state: FSMContext):
         logger.info(f"Команда /start от user_id={message.from_user.id}")
@@ -175,27 +188,6 @@ def register_handlers(dp: Dispatcher, bot: Bot, admin_id: int):
             )
             await state.clear()
             return
-        afisha_path = "/app/images/afisha.jpeg"
-        try:
-            if os.path.exists(afisha_path):
-                await bot.send_photo(
-                    chat_id=message.from_user.id,
-                    photo=FSInputFile(afisha_path),
-                    caption=messages["start_message"],
-                )
-                logger.info(
-                    f"Афиша отправлена с текстом start_message пользователю user_id={message.from_user.id}"
-                )
-            else:
-                await message.answer(messages["start_message"])
-                logger.info(
-                    f"Афиша не найдена, отправлен только текст start_message пользователю user_id={message.from_user.id}"
-                )
-        except Exception as e:
-            logger.error(
-                f"Ошибка при отправке сообщения /start пользователю user_id={message.from_user.id}: {e}"
-            )
-            await message.answer(messages["start_message"])
         success = add_pending_registration(message.from_user.id)
         if not success:
             logger.error(
@@ -204,7 +196,46 @@ def register_handlers(dp: Dispatcher, bot: Bot, admin_id: int):
             await message.answer("Ошибка при начале регистрации. Попробуйте снова.")
             await state.clear()
             return
+        afisha_path = "/app/images/afisha.jpeg"
+        try:
+            if os.path.exists(afisha_path):
+                await bot.send_photo(
+                    chat_id=message.from_user.id,
+                    photo=FSInputFile(afisha_path),
+                    caption=messages["start_message"],
+                    reply_markup=create_register_keyboard(),
+                    parse_mode="HTML",
+                )
+                logger.info(
+                    f"Афиша отправлена с текстом start_message и кнопкой регистрации пользователю user_id={message.from_user.id}"
+                )
+            else:
+                await message.answer(
+                    messages["start_message"],
+                    reply_markup=create_register_keyboard(),
+                    parse_mode="HTML",
+                )
+                logger.info(
+                    f"Афиша не найдена, отправлен текст start_message с кнопкой регистрации пользователю user_id={message.from_user.id}"
+                )
+        except Exception as e:
+            logger.error(
+                f"Ошибка при отправке сообщения /start пользователю user_id={message.from_user.id}: {e}"
+            )
+            await message.answer(
+                messages["start_message"],
+                reply_markup=create_register_keyboard(),
+                parse_mode="HTML",
+            )
+
+    @dp.callback_query(F.data == "start_registration")
+    async def process_start_registration(callback_query, state: FSMContext):
+        logger.info(
+            f"Нажата кнопка 'Регистрация' от user_id={callback_query.from_user.id}"
+        )
+        await callback_query.message.answer("Пожалуйста, введите ваше имя.")
         await state.set_state(RegistrationForm.waiting_for_name)
+        await callback_query.answer()
 
     @dp.message(StateFilter(RegistrationForm.waiting_for_name))
     async def process_name(message: Message, state: FSMContext):
@@ -418,9 +449,12 @@ def register_handlers(dp: Dispatcher, bot: Bot, admin_id: int):
     async def show_participants(message: Message):
         logger.info(f"Команда /participants от user_id={message.from_user.id}")
         participants = get_all_participants()
-        participant_list = messages["participants_list_header"]
+        participant_list = (
+            messages["participants_list_header"] + messages["runners_header"]
+        )
         chunks = []
         current_chunk = participant_list
+        last_role = None
         for index, (
             user_id,
             username,
@@ -431,24 +465,50 @@ def register_handlers(dp: Dispatcher, bot: Bot, admin_id: int):
             payment_status,
             bib_number,
         ) in enumerate(participants, 1):
+            if role != last_role and role == "volunteer":
+                if len(current_chunk) + len(messages["volunteers_header"]) > 4000:
+                    chunks.append(current_chunk)
+                    current_chunk = (
+                        messages["participants_list_header"]
+                        + messages["volunteers_header"]
+                    )
+                else:
+                    current_chunk += messages["volunteers_header"]
+            last_role = role
             date_obj = datetime.datetime.fromisoformat(reg_date.replace("Z", "+00:00"))
             formatted_date = date_obj.strftime("%d.%m.%Y %H:%M")
-            status_emoji = "✅" if payment_status == "paid" else "⏳"
             bib_field = f"№{bib_number}" if bib_number is not None else "№ не присвоен"
-            participant_info = messages["participant_info"].format(
-                index=index,
-                user_id=user_id,
-                name=name,
-                target_time=target_time,
-                role=role,
-                date=formatted_date,
-                status=status_emoji,
-                username=username,
-                bib_number=bib_field,
-            )
+            if role == "runner":
+                status_emoji = "✅" if payment_status == "paid" else "⏳"
+                participant_info = messages["participant_info"].format(
+                    index=index,
+                    user_id=user_id,
+                    name=name,
+                    target_time=target_time,
+                    role=role,
+                    date=formatted_date,
+                    status=status_emoji,
+                    username=username,
+                    bib_number=bib_field,
+                )
+            else:
+                participant_info = messages["participant_info_volunteer"].format(
+                    index=index,
+                    user_id=user_id,
+                    name=name,
+                    target_time=target_time,
+                    role=role,
+                    date=formatted_date,
+                    username=username,
+                    bib_number=bib_field,
+                )
             if len(current_chunk) + len(participant_info) > 4000:
                 chunks.append(current_chunk)
-                current_chunk = participant_list
+                current_chunk = messages["participants_list_header"]
+                if role == "volunteer":
+                    current_chunk += messages["volunteers_header"]
+                else:
+                    current_chunk += messages["runners_header"]
             current_chunk += participant_info
         chunks.append(current_chunk)
         for chunk in chunks:
@@ -626,8 +686,9 @@ def register_handlers(dp: Dispatcher, bot: Bot, admin_id: int):
         user_id = int(parts[1])
         participant = get_participant_by_user_id(user_id)
         if participant:
+            name = participant[2]
             delete_participant(user_id)
-            await message.answer(messages["remove_success"].format(name=participant[2]))
+            await message.answer(messages["remove_success"].format(name=name))
         else:
             await message.answer("Участник не найден.")
 
