@@ -63,5 +63,7 @@
   "admin_decline_notification": "❌ Пользователь {name} отказался от участия.",
   "notify_all_success": "✅ Уведомления успешно отправлены всем участникам.",
   "notify_all_no_participants": "❌ Нет зарегистрированных участников для уведомления.",
-  "notify_all_access_denied": "❌ Доступ запрещен. Эта команда только для администратора."
+  "notify_all_access_denied": "❌ Доступ запрещен. Эта команда только для администратора.",
+  "volunteer_confirm_message": "Спасибо за подтверждение участия в качестве волонтёра!",
+  "admin_volunteer_confirm_notification": "Пользователь {name} подтвердил участие как волонтёр."
 }
