@@ -3,7 +3,14 @@ from aiogram.filters import Command
 from aiogram.types import Message
 from aiogram.exceptions import TelegramBadRequest, TelegramForbiddenError
 from .utils import logger, messages
-from database import get_setting, set_setting, get_participant_count_by_role, get_pending_registrations, delete_pending_registration
+from database import (
+    get_setting,
+    set_setting,
+    get_participant_count_by_role,
+    get_pending_registrations,
+    delete_pending_registration,
+)
+
 
 def register_settings_handlers(dp: Dispatcher, bot: Bot, admin_id: int):
     logger.info("Регистрация обработчиков настроек")
@@ -12,7 +19,9 @@ def register_settings_handlers(dp: Dispatcher, bot: Bot, admin_id: int):
     async def edit_runners(message: Message):
         logger.info(f"Команда /edit_runners от user_id={message.from_user.id}")
         if message.from_user.id != admin_id:
-            logger.warning(f"Доступ к /edit_runners запрещен для user_id={message.from_user.id}")
+            logger.warning(
+                f"Доступ к /edit_runners запрещен для user_id={message.from_user.id}"
+            )
             await message.answer(messages["edit_runners_access_denied"])
             return
         parts = message.text.split()
@@ -31,7 +40,9 @@ def register_settings_handlers(dp: Dispatcher, bot: Bot, admin_id: int):
         current_runners = get_participant_count_by_role("runner")
         if new_max_runners < old_max_runners:
             if new_max_runners < current_runners:
-                logger.warning(f"Попытка установить лимит бегунов ({new_max_runners}) меньше текущего числа бегунов ({current_runners})")
+                logger.warning(
+                    f"Попытка установить лимит бегунов ({new_max_runners}) меньше текущего числа бегунов ({current_runners})"
+                )
                 await message.answer(
                     messages["edit_runners_too_low"].format(
                         current=current_runners, requested=new_max_runners
@@ -40,7 +51,9 @@ def register_settings_handlers(dp: Dispatcher, bot: Bot, admin_id: int):
                 return
         success = set_setting("max_runners", new_max_runners)
         if success:
-            logger.info(f"Лимит бегунов изменен с {old_max_runners} на {new_max_runners}")
+            logger.info(
+                f"Лимит бегунов изменен с {old_max_runners} на {new_max_runners}"
+            )
             await message.answer(
                 messages["edit_runners_success"].format(
                     old=old_max_runners, new=new_max_runners
@@ -58,11 +71,17 @@ def register_settings_handlers(dp: Dispatcher, bot: Bot, admin_id: int):
                                     slots=available_slots
                                 ),
                             )
-                            logger.info(f"Уведомление о новых слотах ({available_slots}) отправлено пользователю user_id={user_id}")
+                            logger.info(
+                                f"Уведомление о новых слотах ({available_slots}) отправлено пользователю user_id={user_id}"
+                            )
                         except TelegramForbiddenError:
-                            logger.warning(f"Пользователь user_id={user_id} заблокировал бот")
+                            logger.warning(
+                                f"Пользователь user_id={user_id} заблокировал бот"
+                            )
                             delete_pending_registration(user_id)
-                            logger.info(f"Пользователь user_id={user_id} удалён из таблицы pending_registrations")
+                            logger.info(
+                                f"Пользователь user_id={user_id} удалён из таблицы pending_registrations"
+                            )
                             name = name or "неизвестно"
                             username = username or "не указан"
                             try:
@@ -70,13 +89,21 @@ def register_settings_handlers(dp: Dispatcher, bot: Bot, admin_id: int):
                                     chat_id=admin_id,
                                     text=messages["admin_blocked_notification"].format(
                                         name=name, username=username, user_id=user_id
-                                    )
+                                    ),
                                 )
-                                logger.info(f"Уведомление администратору (admin_id={admin_id}) о блокировке отправлено")
+                                logger.info(
+                                    f"Уведомление администратору (admin_id={admin_id}) о блокировке отправлено"
+                                )
                             except Exception as admin_e:
-                                logger.error(f"Ошибка при отправке уведомления администратору: {admin_e}")
+                                logger.error(
+                                    f"Ошибка при отправке уведомления администратору: {admin_e}"
+                                )
                         except TelegramBadRequest as e:
-                            logger.error(f"Ошибка при отправке уведомления пользователю user_id={user_id}: {e}")
+                            logger.error(
+                                f"Ошибка при отправке уведомления пользователю user_id={user_id}: {e}"
+                            )
         else:
             logger.error("Ошибка при обновлении настройки max_runners")
-            await message.answer("Ошибка при изменении лимита бегунов. Попробуйте снова.")
+            await message.answer(
+                "Ошибка при изменении лимита бегунов. Попробуйте снова."
+            )

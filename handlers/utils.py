@@ -6,15 +6,21 @@ from aiogram import Dispatcher, Bot
 from aiogram.fsm.state import State, StatesGroup
 from aiogram.types import InlineKeyboardMarkup, InlineKeyboardButton
 
+
 class CustomRotatingFileHandler(logging.handlers.BaseRotatingHandler):
     def __init__(self, filename, maxBytes, encoding=None):
         super().__init__(filename, mode="a", encoding=encoding)
         self.maxBytes = maxBytes
         self.backup_file = f"{filename}.1"
+
     def shouldRollover(self, record):
-        if os.path.exists(self.baseFilename) and os.path.getsize(self.baseFilename) > self.maxBytes:
+        if (
+            os.path.exists(self.baseFilename)
+            and os.path.getsize(self.baseFilename) > self.maxBytes
+        ):
             return True
         return False
+
     def doRollover(self):
         if self.stream:
             self.stream.close()
@@ -24,6 +30,7 @@ class CustomRotatingFileHandler(logging.handlers.BaseRotatingHandler):
                 os.remove(self.backup_file)
             os.rename(self.baseFilename, self.backup_file)
         self.stream = self._open()
+
 
 os.makedirs("/app/logs", exist_ok=True)
 log_level = {
@@ -65,11 +72,14 @@ except json.JSONDecodeError as e:
     raise
 
 if config.get("log_level") not in log_level:
-    logger.error(f"Недопустимое значение log_level: {config.get('log_level')}. Используется ERROR.")
+    logger.error(
+        f"Недопустимое значение log_level: {config.get('log_level')}. Используется ERROR."
+    )
     logging.getLogger().setLevel(logging.ERROR)
 else:
     logging.getLogger().setLevel(log_level[config["log_level"]])
     logger.info(f"Установлен уровень логирования: {config['log_level']}")
+
 
 class RegistrationForm(StatesGroup):
     waiting_for_name = State()
@@ -83,29 +93,50 @@ class RegistrationForm(StatesGroup):
     waiting_for_notify_unpaid_message = State()
     processed = State()
 
+
 def create_role_keyboard():
     keyboard = InlineKeyboardMarkup(
         inline_keyboard=[
-            [InlineKeyboardButton(text=messages["role_runner"], callback_data="role_runner")],
-            [InlineKeyboardButton(text=messages["role_volunteer"], callback_data="role_volunteer")],
+            [
+                InlineKeyboardButton(
+                    text=messages["role_runner"], callback_data="role_runner"
+                )
+            ],
+            [
+                InlineKeyboardButton(
+                    text=messages["role_volunteer"], callback_data="role_volunteer"
+                )
+            ],
         ]
     )
     return keyboard
 
+
 def create_register_keyboard():
     keyboard = InlineKeyboardMarkup(
         inline_keyboard=[
-            [InlineKeyboardButton(text=messages["register_button"], callback_data="start_registration")]
+            [
+                InlineKeyboardButton(
+                    text=messages["register_button"], callback_data="start_registration"
+                )
+            ]
         ]
     )
     return keyboard
+
 
 def create_confirmation_keyboard():
     keyboard = InlineKeyboardMarkup(
         inline_keyboard=[
             [
-                InlineKeyboardButton(text=messages["confirm_button"], callback_data="confirm_participation"),
-                InlineKeyboardButton(text=messages["decline_button"], callback_data="decline_participation")
+                InlineKeyboardButton(
+                    text=messages["confirm_button"],
+                    callback_data="confirm_participation",
+                ),
+                InlineKeyboardButton(
+                    text=messages["decline_button"],
+                    callback_data="decline_participation",
+                ),
             ]
         ]
     )
