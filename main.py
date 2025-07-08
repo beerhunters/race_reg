@@ -10,7 +10,10 @@ from aiogram.types import BotCommand
 from aiogram.enums import ParseMode
 
 from database import init_db
+
 from handlers import register_handlers
+
+# from handler_register import register_all_handlers
 
 
 class CustomRotatingFileHandler(logging.handlers.BaseRotatingHandler):
@@ -90,6 +93,7 @@ async def main():
     logger.info("Запуск бота")
     init_db()
     register_handlers(dp, bot, ADMIN_ID)
+    # register_all_handlers(dp, bot, ADMIN_ID)
     await bot.set_my_commands(
         [
             BotCommand(command="/start", description="Run, drink, repeat!"),
