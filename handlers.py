@@ -6,7 +6,6 @@ import sqlite3
 import logging
 import logging.handlers
 import os
-import pytz
 from aiogram import Dispatcher, Bot, F
 from aiogram.filters import Command, CommandStart, StateFilter
 from aiogram.fsm.context import FSMContext
@@ -77,6 +76,7 @@ logging.basicConfig(
     ],
 )
 logger = logging.getLogger(__name__)
+
 try:
     with open("messages.json", "r", encoding="utf-8") as f:
         messages = json.load(f)
@@ -87,6 +87,7 @@ except FileNotFoundError:
 except json.JSONDecodeError as e:
     logger.error(f"Ошибка при разборе messages.json: {e}")
     raise
+
 try:
     with open("config.json", "r", encoding="utf-8") as f:
         config = json.load(f)
@@ -97,6 +98,7 @@ except FileNotFoundError:
 except json.JSONDecodeError as e:
     logger.error(f"Ошибка при разборе config.json: {e}")
     raise
+
 if config.get("log_level") not in log_level:
     logger.error(
         f"Недопустимое значение log_level: {config.get('log_level')}. Используется ERROR."
@@ -115,6 +117,7 @@ class RegistrationForm(StatesGroup):
     waiting_for_afisha_image = State()
     waiting_for_sponsor_image = State()
     waiting_for_notify_with_text_message = State()
+    waiting_for_notify_with_text_photo = State()
     waiting_for_notify_unpaid_message = State()
     processed = State()
 
@@ -297,32 +300,31 @@ def register_handlers(dp: Dispatcher, bot: Bot, admin_id: int):
                     )
                 logger.info(f"Уведомление отправлено пользователю user_id={user_id}")
                 success_count += 1
-            except TelegramBadRequest as e:
-                if "bot was blocked by the user" in str(e):
-                    logger.warning(f"Пользователь user_id={user_id} заблокировал бот")
-                    delete_participant(user_id)
-                    delete_pending_registration(user_id)
+            except TelegramForbiddenError:
+                logger.warning(f"Пользователь user_id={user_id} заблокировал бот")
+                delete_participant(user_id)
+                delete_pending_registration(user_id)
+                logger.info(
+                    f"Пользователь user_id={user_id} удалён из таблиц participants и pending_registrations"
+                )
+                try:
+                    await bot.send_message(
+                        chat_id=admin_id,
+                        text=messages["admin_blocked_notification"].format(
+                            name=name, username=username, user_id=user_id
+                        ),
+                    )
                     logger.info(
-                        f"Пользователь user_id={user_id} удалён из таблиц participants и pending_registrations"
+                        f"Уведомление администратору (admin_id={admin_id}) о блокировке отправлено"
                     )
-                    try:
-                        await bot.send_message(
-                            chat_id=admin_id,
-                            text=messages["admin_blocked_notification"].format(
-                                name=name, username=username, user_id=user_id
-                            ),
-                        )
-                        logger.info(
-                            f"Уведомление администратору (admin_id={admin_id}) о блокировке отправлено"
-                        )
-                    except Exception as admin_e:
-                        logger.error(
-                            f"Ошибка при отправке уведомления администратору: {admin_e}"
-                        )
-                else:
+                except Exception as admin_e:
                     logger.error(
-                        f"Ошибка при отправке уведомления пользователю user_id={user_id}: {e}"
+                        f"Ошибка при отправке уведомления администратору: {admin_e}"
                     )
+            except TelegramBadRequest as e:
+                logger.error(
+                    f"Ошибка при отправке уведомления пользователю user_id={user_id}: {e}"
+                )
         await message.answer(messages["notify_all_success"].format(count=success_count))
         logger.info(f"Уведомления отправлены {success_count} участникам")
 
@@ -356,29 +358,45 @@ def register_handlers(dp: Dispatcher, bot: Bot, admin_id: int):
             await message.answer("Текст слишком длинный. Максимум 4096 символов.")
             await state.clear()
             return
+        await state.update_data(notify_text=notify_text)
+        await message.answer(messages["notify_with_text_photo_prompt"])
+        await state.set_state(RegistrationForm.waiting_for_notify_with_text_photo)
+
+    @dp.message(
+        StateFilter(RegistrationForm.waiting_for_notify_with_text_photo), F.photo
+    )
+    async def process_notify_with_text_photo(message: Message, state: FSMContext):
+        logger.info(
+            f"Получено изображение для /notify_with_text от user_id={message.from_user.id}"
+        )
+        user_data = await state.get_data()
+        notify_text = user_data.get("notify_text")
         participants = get_all_participants()
         success_count = 0
-        afisha_path = "/app/images/afisha.jpeg"
-        for participant in participants:
-            user_id = participant[0]
-            name = participant[2]
-            username = participant[1] or "не указан"
-            try:
-                if os.path.exists(afisha_path):
+        try:
+            photo = message.photo[-1]
+            file = await bot.get_file(photo.file_id)
+            file_path = file.file_path
+            temp_photo_path = "/app/images/temp_notify_photo.jpeg"
+            await bot.download_file(file_path, temp_photo_path)
+            os.chmod(temp_photo_path, 0o644)
+            logger.info(f"Изображение сохранено временно в {temp_photo_path}")
+            for participant in participants:
+                user_id = participant[0]
+                name = participant[2]
+                username = participant[1] or "не указан"
+                try:
                     await bot.send_photo(
                         chat_id=user_id,
-                        photo=FSInputFile(afisha_path),
+                        photo=FSInputFile(temp_photo_path),
                         caption=notify_text,
                         parse_mode="HTML",
                     )
-                else:
-                    await bot.send_message(
-                        chat_id=user_id, text=notify_text, parse_mode="HTML"
+                    logger.info(
+                        f"Уведомление с фото отправлено пользователю user_id={user_id}"
                     )
-                logger.info(f"Уведомление отправлено пользователю user_id={user_id}")
-                success_count += 1
-            except TelegramBadRequest as e:
-                if "bot was blocked by the user" in str(e):
+                    success_count += 1
+                except TelegramForbiddenError:
                     logger.warning(f"Пользователь user_id={user_id} заблокировал бот")
                     delete_participant(user_id)
                     delete_pending_registration(user_id)
@@ -399,6 +417,80 @@ def register_handlers(dp: Dispatcher, bot: Bot, admin_id: int):
                         logger.error(
                             f"Ошибка при отправке уведомления администратору: {admin_e}"
                         )
+                except TelegramBadRequest as e:
+                    if "chat not found" in str(e).lower():
+                        logger.warning(
+                            f"Чат с пользователем user_id={user_id} не найден, уведомление пропущено"
+                        )
+                    else:
+                        logger.error(
+                            f"Ошибка при отправке уведомления пользователю user_id={user_id}: {e}"
+                        )
+            os.remove(temp_photo_path)
+            logger.info(f"Временное изображение {temp_photo_path} удалено")
+        except Exception as e:
+            logger.error(
+                f"Ошибка при сохранении изображения для /notify_with_text: {e}"
+            )
+            await message.answer("Ошибка при сохранении изображения. Попробуйте снова.")
+            await state.clear()
+            return
+        await message.answer(
+            messages["notify_with_text_success"].format(count=success_count)
+        )
+        logger.info(f"Уведомления отправлены {success_count} участникам")
+        await state.clear()
+
+    @dp.message(
+        StateFilter(RegistrationForm.waiting_for_notify_with_text_photo),
+        Command("skip"),
+    )
+    async def process_notify_with_text_skip_photo(message: Message, state: FSMContext):
+        logger.info(
+            f"Пропущено изображение для /notify_with_text от user_id={message.from_user.id}"
+        )
+        user_data = await state.get_data()
+        notify_text = user_data.get("notify_text")
+        participants = get_all_participants()
+        success_count = 0
+        for participant in participants:
+            user_id = participant[0]
+            name = participant[2]
+            username = participant[1] or "не указан"
+            try:
+                await bot.send_message(
+                    chat_id=user_id, text=notify_text, parse_mode="HTML"
+                )
+                logger.info(
+                    f"Уведомление без фото отправлено пользователю user_id={user_id}"
+                )
+                success_count += 1
+            except TelegramForbiddenError:
+                logger.warning(f"Пользователь user_id={user_id} заблокировал бот")
+                delete_participant(user_id)
+                delete_pending_registration(user_id)
+                logger.info(
+                    f"Пользователь user_id={user_id} удалён из таблиц participants и pending_registrations"
+                )
+                try:
+                    await bot.send_message(
+                        chat_id=admin_id,
+                        text=messages["admin_blocked_notification"].format(
+                            name=name, username=username, user_id=user_id
+                        ),
+                    )
+                    logger.info(
+                        f"Уведомление администратору (admin_id={admin_id}) о блокировке отправлено"
+                    )
+                except Exception as admin_e:
+                    logger.error(
+                        f"Ошибка при отправке уведомления администратору: {admin_e}"
+                    )
+            except TelegramBadRequest as e:
+                if "chat not found" in str(e).lower():
+                    logger.warning(
+                        f"Чат с пользователем user_id={user_id} не найден, уведомление пропущено"
+                    )
                 else:
                     logger.error(
                         f"Ошибка при отправке уведомления пользователю user_id={user_id}: {e}"
@@ -408,6 +500,15 @@ def register_handlers(dp: Dispatcher, bot: Bot, admin_id: int):
         )
         logger.info(f"Уведомления отправлены {success_count} участникам")
         await state.clear()
+
+    @dp.message(StateFilter(RegistrationForm.waiting_for_notify_with_text_photo))
+    async def process_notify_with_text_invalid(message: Message, state: FSMContext):
+        logger.info(
+            f"Некорректный ввод в состоянии waiting_for_notify_with_text_photo от user_id={message.from_user.id}"
+        )
+        await message.answer(
+            "Пожалуйста, отправьте фото или используйте /skip, чтобы пропустить."
+        )
 
     @dp.message(Command("notify_unpaid"))
     async def notify_unpaid_participants(message: Message, state: FSMContext):
@@ -487,32 +588,31 @@ def register_handlers(dp: Dispatcher, bot: Bot, admin_id: int):
                     f"Уведомление отправлено неоплатившему пользователю user_id={user_id}"
                 )
                 success_count += 1
-            except TelegramBadRequest as e:
-                if "bot was blocked by the user" in str(e):
-                    logger.warning(f"Пользователь user_id={user_id} заблокировал бот")
-                    delete_participant(user_id)
-                    delete_pending_registration(user_id)
+            except TelegramForbiddenError:
+                logger.warning(f"Пользователь user_id={user_id} заблокировал бот")
+                delete_participant(user_id)
+                delete_pending_registration(user_id)
+                logger.info(
+                    f"Пользователь user_id={user_id} удалён из таблиц participants и pending_registrations"
+                )
+                try:
+                    await bot.send_message(
+                        chat_id=admin_id,
+                        text=messages["admin_blocked_notification"].format(
+                            name=name, username=username, user_id=user_id
+                        ),
+                    )
                     logger.info(
-                        f"Пользователь user_id={user_id} удалён из таблиц participants и pending_registrations"
+                        f"Уведомление администратору (admin_id={admin_id}) о блокировке отправлено"
                     )
-                    try:
-                        await bot.send_message(
-                            chat_id=admin_id,
-                            text=messages["admin_blocked_notification"].format(
-                                name=name, username=username, user_id=user_id
-                            ),
-                        )
-                        logger.info(
-                            f"Уведомление администратору (admin_id={admin_id}) о блокировке отправлено"
-                        )
-                    except Exception as admin_e:
-                        logger.error(
-                            f"Ошибка при отправке уведомления администратору: {admin_e}"
-                        )
-                else:
+                except Exception as admin_e:
                     logger.error(
-                        f"Ошибка при отправке уведомления пользователю user_id={user_id}: {e}"
+                        f"Ошибка при отправке уведомления администратору: {admin_e}"
                     )
+            except TelegramBadRequest as e:
+                logger.error(
+                    f"Ошибка при отправке уведомления пользователю user_id={user_id}: {e}"
+                )
         await message.answer(
             messages["notify_unpaid_success"].format(count=success_count)
         )
@@ -793,37 +893,36 @@ def register_handlers(dp: Dispatcher, bot: Bot, admin_id: int):
                             f"Файл {image_path} не найден, отправляется только текст спонсоров"
                         )
                         await callback_query.message.answer(messages["sponsor_message"])
-                except TelegramBadRequest as e:
-                    if "bot was blocked by the user" in str(e):
-                        logger.warning(
-                            f"Пользователь user_id={callback_query.from_user.id} заблокировал бот"
+                except TelegramForbiddenError:
+                    logger.warning(
+                        f"Пользователь user_id={callback_query.from_user.id} заблокировал бот"
+                    )
+                    delete_participant(callback_query.from_user.id)
+                    delete_pending_registration(callback_query.from_user.id)
+                    logger.info(
+                        f"Пользователь user_id={callback_query.from_user.id} удалён из таблиц participants и pending_registrations"
+                    )
+                    try:
+                        await bot.send_message(
+                            chat_id=admin_id,
+                            text=messages["admin_blocked_notification"].format(
+                                name=name,
+                                username=username,
+                                user_id=callback_query.from_user.id,
+                            ),
                         )
-                        delete_participant(callback_query.from_user.id)
-                        delete_pending_registration(callback_query.from_user.id)
                         logger.info(
-                            f"Пользователь user_id={callback_query.from_user.id} удалён из таблиц participants и pending_registrations"
+                            f"Уведомление администратору (admin_id={admin_id}) о блокировке отправлено"
                         )
-                        try:
-                            await bot.send_message(
-                                chat_id=admin_id,
-                                text=messages["admin_blocked_notification"].format(
-                                    name=name,
-                                    username=username,
-                                    user_id=callback_query.from_user.id,
-                                ),
-                            )
-                            logger.info(
-                                f"Уведомление администратору (admin_id={admin_id}) о блокировке отправлено"
-                            )
-                        except Exception as admin_e:
-                            logger.error(
-                                f"Ошибка при отправке уведомления администратору: {admin_e}"
-                            )
-                    else:
+                    except Exception as admin_e:
                         logger.error(
-                            f"Ошибка при отправке сообщения со спонсорами пользователю user_id={callback_query.from_user.id}: {e}"
+                            f"Ошибка при отправке уведомления администратору: {admin_e}"
                         )
-                        await callback_query.message.answer(messages["sponsor_message"])
+                except TelegramBadRequest as e:
+                    logger.error(
+                        f"Ошибка при отправке сообщения со спонсорами пользователю user_id={callback_query.from_user.id}: {e}"
+                    )
+                    await callback_query.message.answer(messages["sponsor_message"])
                 logger.info(
                     f"Сообщения отправлены: пользователю и админу (admin_id={admin_id})"
                 )
@@ -897,37 +996,34 @@ def register_handlers(dp: Dispatcher, bot: Bot, admin_id: int):
                         f"Файл {image_path} не найден, отправляется только текст спонсоров"
                     )
                     await message.answer(messages["sponsor_message"])
-            except TelegramBadRequest as e:
-                if "bot was blocked by the user" in str(e):
-                    logger.warning(
-                        f"Пользователь user_id={message.from_user.id} заблокировал бот"
+            except TelegramForbiddenError:
+                logger.warning(
+                    f"Пользователь user_id={message.from_user.id} заблокировал бот"
+                )
+                delete_participant(message.from_user.id)
+                delete_pending_registration(message.from_user.id)
+                logger.info(
+                    f"Пользователь user_id={message.from_user.id} удалён из таблиц participants и pending_registrations"
+                )
+                try:
+                    await bot.send_message(
+                        chat_id=admin_id,
+                        text=messages["admin_blocked_notification"].format(
+                            name=name, username=username, user_id=message.from_user.id
+                        ),
                     )
-                    delete_participant(message.from_user.id)
-                    delete_pending_registration(message.from_user.id)
                     logger.info(
-                        f"Пользователь user_id={message.from_user.id} удалён из таблиц participants и pending_registrations"
+                        f"Уведомление администратору (admin_id={admin_id}) о блокировке отправлено"
                     )
-                    try:
-                        await bot.send_message(
-                            chat_id=admin_id,
-                            text=messages["admin_blocked_notification"].format(
-                                name=name,
-                                username=username,
-                                user_id=message.from_user.id,
-                            ),
-                        )
-                        logger.info(
-                            f"Уведомление администратору (admin_id={admin_id}) о блокировке отправлено"
-                        )
-                    except Exception as admin_e:
-                        logger.error(
-                            f"Ошибка при отправке уведомления администратору: {admin_e}"
-                        )
-                else:
+                except Exception as admin_e:
                     logger.error(
-                        f"Ошибка при отправке сообщения со спонсорами пользователю user_id={message.from_user.id}: {e}"
+                        f"Ошибка при отправке уведомления администратору: {admin_e}"
                     )
-                    await message.answer(messages["sponsor_message"])
+            except TelegramBadRequest as e:
+                logger.error(
+                    f"Ошибка при отправке сообщения со спонсорами пользователю user_id={message.from_user.id}: {e}"
+                )
+                await message.answer(messages["sponsor_message"])
             logger.info(
                 f"Сообщения отправлены: пользователю и админу (admin_id={admin_id})"
             )
@@ -969,12 +1065,7 @@ def register_handlers(dp: Dispatcher, bot: Bot, admin_id: int):
                 else:
                     current_chunk += messages["volunteers_header"]
             last_role = role
-            # date_obj = datetime.datetime.fromisoformat(reg_date.replace("Z", "+00:00"))
-            # formatted_date = date_obj.strftime("%d.%m.%Y %H:%M")
             date_obj = datetime.datetime.fromisoformat(reg_date.replace("Z", "+00:00"))
-            utc_timezone = pytz.timezone("UTC")
-            moscow_timezone = pytz.timezone("Europe/Moscow")  # UTC+3
-            date_obj = date_obj.replace(tzinfo=utc_timezone).astimezone(moscow_timezone)
             formatted_date = date_obj.strftime("%d.%m.%Y %H:%M")
             bib_field = f"№{bib_number}" if bib_number is not None else "№ не присвоен"
             if role == "runner":
@@ -1115,34 +1206,33 @@ def register_handlers(dp: Dispatcher, bot: Bot, admin_id: int):
                 logger.info(
                     f"Уведомление об оплате отправлено пользователю user_id={user_id}"
                 )
-            except TelegramBadRequest as e:
-                if "bot was blocked by the user" in str(e):
-                    logger.warning(f"Пользователь user_id={user_id} заблокировал бот")
-                    delete_participant(user_id)
-                    delete_pending_registration(user_id)
+            except TelegramForbiddenError:
+                logger.warning(f"Пользователь user_id={user_id} заблокировал бот")
+                delete_participant(user_id)
+                delete_pending_registration(user_id)
+                logger.info(
+                    f"Пользователь user_id={user_id} удалён из таблиц participants и pending_registrations"
+                )
+                try:
+                    await bot.send_message(
+                        chat_id=admin_id,
+                        text=messages["admin_blocked_notification"].format(
+                            name=participant[2],
+                            username=participant[1] or "не указан",
+                            user_id=user_id,
+                        ),
+                    )
                     logger.info(
-                        f"Пользователь user_id={user_id} удалён из таблиц participants и pending_registrations"
+                        f"Уведомление администратору (admin_id={admin_id}) о блокировке отправлено"
                     )
-                    try:
-                        await bot.send_message(
-                            chat_id=admin_id,
-                            text=messages["admin_blocked_notification"].format(
-                                name=participant[2],
-                                username=participant[1] or "не указан",
-                                user_id=user_id,
-                            ),
-                        )
-                        logger.info(
-                            f"Уведомление администратору (admin_id={admin_id}) о блокировке отправлено"
-                        )
-                    except Exception as admin_e:
-                        logger.error(
-                            f"Ошибка при отправке уведомления администратору: {admin_e}"
-                        )
-                else:
+                except Exception as admin_e:
                     logger.error(
-                        f"Ошибка при отправке уведомления пользователю user_id={user_id}: {e}"
+                        f"Ошибка при отправке уведомления администратору: {admin_e}"
                     )
+            except TelegramBadRequest as e:
+                logger.error(
+                    f"Ошибка при отправке уведомления пользователю user_id={user_id}: {e}"
+                )
         else:
             await message.answer("Участник не найден.")
 
@@ -1183,36 +1273,33 @@ def register_handlers(dp: Dispatcher, bot: Bot, admin_id: int):
                     logger.info(
                         f"Уведомление о присвоении номера {bib_number} отправлено пользователю user_id={user_id}"
                     )
-                except TelegramBadRequest as e:
-                    if "bot was blocked by the user" in str(e):
-                        logger.warning(
-                            f"Пользователь user_id={user_id} заблокировал бот"
+                except TelegramForbiddenError:
+                    logger.warning(f"Пользователь user_id={user_id} заблокировал бот")
+                    delete_participant(user_id)
+                    delete_pending_registration(user_id)
+                    logger.info(
+                        f"Пользователь user_id={user_id} удалён из таблиц participants и pending_registrations"
+                    )
+                    try:
+                        await bot.send_message(
+                            chat_id=admin_id,
+                            text=messages["admin_blocked_notification"].format(
+                                name=participant[2],
+                                username=participant[1] or "не указан",
+                                user_id=user_id,
+                            ),
                         )
-                        delete_participant(user_id)
-                        delete_pending_registration(user_id)
                         logger.info(
-                            f"Пользователь user_id={user_id} удалён из таблиц participants и pending_registrations"
+                            f"Уведомление администратору (admin_id={admin_id}) о блокировке отправлено"
                         )
-                        try:
-                            await bot.send_message(
-                                chat_id=admin_id,
-                                text=messages["admin_blocked_notification"].format(
-                                    name=participant[2],
-                                    username=participant[1] or "не указан",
-                                    user_id=user_id,
-                                ),
-                            )
-                            logger.info(
-                                f"Уведомление администратору (admin_id={admin_id}) о блокировке отправлено"
-                            )
-                        except Exception as admin_e:
-                            logger.error(
-                                f"Ошибка при отправке уведомления администратору: {admin_e}"
-                            )
-                    else:
+                    except Exception as admin_e:
                         logger.error(
-                            f"Ошибка при отправке уведомления о номере пользователю user_id={user_id}: {e}"
+                            f"Ошибка при отправке уведомления администратору: {admin_e}"
                         )
+                except TelegramBadRequest as e:
+                    logger.error(
+                        f"Ошибка при отправке уведомления о номере пользователю user_id={user_id}: {e}"
+                    )
             else:
                 await message.answer("Ошибка при присвоении номера. Попробуйте снова.")
         else:
@@ -1246,36 +1333,33 @@ def register_handlers(dp: Dispatcher, bot: Bot, admin_id: int):
                     logger.info(
                         f"Уведомление об удалении отправлено пользователю user_id={user_id}"
                     )
-                except TelegramBadRequest as e:
-                    if "bot was blocked by the user" in str(e):
-                        logger.warning(
-                            f"Пользователь user_id={user_id} заблокировал бот"
+                except TelegramForbiddenError:
+                    logger.warning(f"Пользователь user_id={user_id} заблокировал бот")
+                    delete_participant(user_id)
+                    delete_pending_registration(user_id)
+                    logger.info(
+                        f"Пользователь user_id={user_id} удалён из таблиц participants и pending_registrations"
+                    )
+                    try:
+                        await bot.send_message(
+                            chat_id=admin_id,
+                            text=messages["admin_blocked_notification"].format(
+                                name=participant[2],
+                                username=participant[1] or "не указан",
+                                user_id=user_id,
+                            ),
                         )
-                        delete_participant(user_id)
-                        delete_pending_registration(user_id)
                         logger.info(
-                            f"Пользователь user_id={user_id} удалён из таблиц participants и pending_registrations"
+                            f"Уведомление администратору (admin_id={admin_id}) о блокировке отправлено"
                         )
-                        try:
-                            await bot.send_message(
-                                chat_id=admin_id,
-                                text=messages["admin_blocked_notification"].format(
-                                    name=participant[2],
-                                    username=participant[1] or "не указан",
-                                    user_id=user_id,
-                                ),
-                            )
-                            logger.info(
-                                f"Уведомление администратору (admin_id={admin_id}) о блокировке отправлено"
-                            )
-                        except Exception as admin_e:
-                            logger.error(
-                                f"Ошибка при отправке уведомления администратору: {admin_e}"
-                            )
-                    else:
+                    except Exception as admin_e:
                         logger.error(
-                            f"Ошибка при отправке уведомления об удалении пользователю user_id={user_id}: {e}"
+                            f"Ошибка при отправке уведомления администратору: {admin_e}"
                         )
+                except TelegramBadRequest as e:
+                    logger.error(
+                        f"Ошибка при отправке уведомления об удалении пользователю user_id={user_id}: {e}"
+                    )
             else:
                 await message.answer("Ошибка при удалении участника. Попробуйте снова.")
         else:
