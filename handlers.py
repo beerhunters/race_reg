@@ -18,7 +18,7 @@ from aiogram.types import (
     BufferedInputFile,
     FSInputFile,
 )
-from aiogram.exceptions import TelegramBadRequest
+from aiogram.exceptions import TelegramBadRequest, TelegramForbiddenError
 from database import (
     add_participant,
     get_all_participants,
@@ -1508,52 +1508,44 @@ def register_handlers(dp: Dispatcher, bot: Bot, admin_id: int):
                 if available_slots > 0:
                     pending_users = get_pending_registrations()
                     for user_id, username, name, target_time, role in pending_users:
-                        if role == "runner":
+                        try:
+                            await bot.send_message(
+                                chat_id=user_id,
+                                text=messages["new_slots_notification"].format(
+                                    slots=available_slots
+                                ),
+                            )
+                            logger.info(
+                                f"Уведомление о новых слотах ({available_slots}) отправлено пользователю user_id={user_id}"
+                            )
+                        except TelegramForbiddenError:
+                            logger.warning(
+                                f"Пользователь user_id={user_id} заблокировал бот"
+                            )
+                            delete_pending_registration(user_id)
+                            logger.info(
+                                f"Пользователь user_id={user_id} удалён из таблицы pending_registrations"
+                            )
+                            name = name or "неизвестно"
+                            username = username or "не указан"
                             try:
                                 await bot.send_message(
-                                    chat_id=user_id,
-                                    text=messages["new_slots_notification"].format(
-                                        slots=available_slots
+                                    chat_id=admin_id,
+                                    text=messages["admin_blocked_notification"].format(
+                                        name=name, username=username, user_id=user_id
                                     ),
                                 )
                                 logger.info(
-                                    f"Уведомление о новых слотах ({available_slots}) отправлено пользователю user_id={user_id}"
+                                    f"Уведомление администратору (admin_id={admin_id}) о блокировке отправлено"
                                 )
-                                delete_pending_registration(user_id)
-                            except TelegramBadRequest as e:
-                                if "bot was blocked by the user" in str(e):
-                                    logger.warning(
-                                        f"Пользователь user_id={user_id} заблокировал бот"
-                                    )
-                                    delete_participant(user_id)
-                                    delete_pending_registration(user_id)
-                                    logger.info(
-                                        f"Пользователь user_id={user_id} удалён из таблиц participants и pending_registrations"
-                                    )
-                                    name = name or "неизвестно"
-                                    username = username or "не указан"
-                                    try:
-                                        await bot.send_message(
-                                            chat_id=admin_id,
-                                            text=messages[
-                                                "admin_blocked_notification"
-                                            ].format(
-                                                name=name,
-                                                username=username,
-                                                user_id=user_id,
-                                            ),
-                                        )
-                                        logger.info(
-                                            f"Уведомление администратору (admin_id={admin_id}) о блокировке отправлено"
-                                        )
-                                    except Exception as admin_e:
-                                        logger.error(
-                                            f"Ошибка при отправке уведомления администратору: {admin_e}"
-                                        )
-                                else:
-                                    logger.error(
-                                        f"Ошибка при отправке уведомления пользователю user_id={user_id}: {e}"
-                                    )
+                            except Exception as admin_e:
+                                logger.error(
+                                    f"Ошибка при отправке уведомления администратору: {admin_e}"
+                                )
+                        except TelegramBadRequest as e:
+                            logger.error(
+                                f"Ошибка при отправке уведомления пользователю user_id={user_id}: {e}"
+                            )
         else:
             logger.error("Ошибка при обновлении настройки max_runners")
             await message.answer(
