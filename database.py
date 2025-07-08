@@ -18,84 +18,6 @@ except json.JSONDecodeError as e:
     raise
 
 
-# def init_db():
-#     os.makedirs(os.path.dirname(DB_PATH), exist_ok=True)
-#     try:
-#         with sqlite3.connect(DB_PATH) as conn:
-#             cursor = conn.cursor()
-#             cursor.execute(
-#                 """
-#                 CREATE TABLE IF NOT EXISTS participants (
-#                     user_id INTEGER PRIMARY KEY,
-#                     username TEXT,
-#                     name TEXT,
-#                     target_time TEXT,
-#                     role TEXT,
-#                     reg_date TEXT,
-#                     payment_status TEXT,
-#                     bib_number INTEGER
-#                 )
-#             """
-#             )
-#             # cursor.execute(
-#             #     """
-#             #     CREATE TABLE IF NOT EXISTS pending_registrations (
-#             #         user_id INTEGER PRIMARY KEY
-#             #     )
-#             # """
-#             # )
-#             cursor.execute(
-#                 """
-#                 CREATE TABLE IF NOT EXISTS pending_registrations (
-#                     user_id INTEGER PRIMARY KEY,
-#                     username TEXT,
-#                     name TEXT,
-#                     target_time TEXT,
-#                     role TEXT
-#                 )
-#             """
-#             )
-#             cursor.execute(
-#                 """
-#                 INSERT OR IGNORE INTO settings (key, value) VALUES
-#                     ('max_runners', '24'),
-#                     ('max_volunteers', '6')
-#             """
-#             )
-#             cursor.execute(
-#                 "SELECT name FROM sqlite_master WHERE type='table' AND name='participants'"
-#             )
-#             conn.commit()
-#             cursor.execute("PRAGMA table_info(participants)")
-#             columns = [info[1] for info in cursor.fetchall()]
-#             required_columns = ["username", "name", "target_time", "role"]
-#             for column in required_columns:
-#                 if column not in columns:
-#                     cursor.execute(
-#                         f"ALTER TABLE pending_registrations ADD COLUMN {column} TEXT"
-#                     )
-#                     logger.info(
-#                         f"Добавлен столбец {column} в таблицу pending_registrations"
-#                     )
-#             expected_columns = [
-#                 "user_id",
-#                 "username",
-#                 "name",
-#                 "target_time",
-#                 "role",
-#                 "reg_date",
-#                 "payment_status",
-#                 "bib_number",
-#             ]
-#             if columns != expected_columns:
-#                 logger.error(
-#                     f"Структура таблицы participants не соответствует ожидаемой: {columns}"
-#                 )
-#                 raise ValueError("Неверная структура таблицы participants")
-#             logger.info("База данных успешно инициализирована")
-#     except sqlite3.Error as e:
-#         logger.error(f"Ошибка при инициализации базы данных: {e}")
-#         raise
 def init_db():
     try:
         with sqlite3.connect(DB_PATH, timeout=10) as conn:
@@ -161,22 +83,6 @@ def init_db():
         raise
 
 
-# def add_pending_registration(user_id: int):
-#     try:
-#         with sqlite3.connect(DB_PATH) as conn:
-#             cursor = conn.cursor()
-#             cursor.execute(
-#                 "INSERT OR IGNORE INTO pending_registrations (user_id) VALUES (?)",
-#                 (user_id,),
-#             )
-#             conn.commit()
-#             logger.info(f"Добавлена незавершённая регистрация для user_id={user_id}")
-#             return True
-#     except sqlite3.Error as e:
-#         logger.error(
-#             f"Ошибка при добавлении в pending_registrations для user_id={user_id}: {e}"
-#         )
-#         return False
 def add_pending_registration(
     user_id: int,
     username: str = None,
@@ -203,16 +109,6 @@ def add_pending_registration(
         return False
 
 
-# def get_pending_registrations():
-#     try:
-#         with sqlite3.connect(DB_PATH) as conn:
-#             cursor = conn.cursor()
-#             cursor.execute("SELECT user_id FROM pending_registrations")
-#             pending = cursor.fetchall()
-#             return [row[0] for row in pending]
-#     except sqlite3.Error as e:
-#         logger.error(f"Ошибка при получении pending_registrations: {e}")
-#         return []
 def get_pending_registrations():
     try:
         with sqlite3.connect(DB_PATH, timeout=10) as conn:
@@ -227,19 +123,6 @@ def get_pending_registrations():
         return []
 
 
-# def delete_pending_registration(user_id: int):
-#     try:
-#         with sqlite3.connect(DB_PATH) as conn:
-#             cursor = conn.cursor()
-#             cursor.execute(
-#                 "DELETE FROM pending_registrations WHERE user_id = ?", (user_id,)
-#             )
-#             conn.commit()
-#             logger.info(f"Удалена незавершённая регистрация для user_id={user_id}")
-#     except sqlite3.Error as e:
-#         logger.error(
-#             f"Ошибка при удалении pending_registrations для user_id={user_id}: {e}"
-#         )
 def delete_pending_registration(user_id: int) -> bool:
     try:
         with sqlite3.connect(DB_PATH, timeout=10) as conn:
