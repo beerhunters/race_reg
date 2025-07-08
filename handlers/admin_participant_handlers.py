@@ -2,6 +2,7 @@ import datetime
 import sqlite3
 import io
 import csv
+import pytz
 from aiogram import Dispatcher, Bot, F
 from aiogram.exceptions import TelegramForbiddenError, TelegramBadRequest
 from aiogram.filters import Command
@@ -53,7 +54,12 @@ def register_admin_participant_handlers(dp: Dispatcher, bot: Bot, admin_id: int)
                 else:
                     current_chunk += messages["volunteers_header"]
             last_role = role
+            # date_obj = datetime.datetime.fromisoformat(reg_date.replace("Z", "+00:00"))
+            # formatted_date = date_obj.strftime("%d.%m.%Y %H:%M")
             date_obj = datetime.datetime.fromisoformat(reg_date.replace("Z", "+00:00"))
+            utc_timezone = pytz.timezone("UTC")
+            moscow_timezone = pytz.timezone("Europe/Moscow")
+            date_obj = date_obj.replace(tzinfo=utc_timezone).astimezone(moscow_timezone)
             formatted_date = date_obj.strftime("%d.%m.%Y %H:%M")
             bib_field = f"№{bib_number}" if bib_number is not None else "№ не присвоен"
             if role == "runner":
