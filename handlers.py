@@ -950,8 +950,6 @@ def register_handlers(dp: Dispatcher, bot: Bot, admin_id: int):
                 else:
                     current_chunk += messages["volunteers_header"]
             last_role = role
-            # date_obj = datetime.datetime.fromisoformat(reg_date.replace("Z", "+00:00"))
-            # formatted_date = date_obj.strftime("%d.%m.%Y %H:%M")
             date_obj = datetime.datetime.fromisoformat(reg_date.replace("Z", "+00:00"))
             utc_timezone = pytz.timezone("UTC")
             moscow_timezone = pytz.timezone("Europe/Moscow")  # UTC+3
