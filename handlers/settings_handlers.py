@@ -5,6 +5,8 @@ from aiogram.filters import Command
 from aiogram.fsm.context import FSMContext
 from aiogram.types import Message
 from aiogram.exceptions import TelegramBadRequest, TelegramForbiddenError
+from pytz import timezone
+
 from .utils import logger, messages, RegistrationForm
 from database import (
     get_setting,
@@ -127,17 +129,18 @@ def register_settings_handlers(dp: Dispatcher, bot: Bot, admin_id: int):
             return
         date_text = message.text.strip()
         try:
-            end_date = datetime.strptime(date_text, "%d.%m.%Y")
-            if end_date < datetime.now():
-                # if end_date.date() < datetime.now().date():
+            end_date = datetime.strptime(date_text, "%H:%M %d.%m.%Y")
+            moscow_tz = timezone("Europe/Moscow")
+            end_date = moscow_tz.localize(end_date)
+            current_time = datetime.now(moscow_tz)
+            if end_date < current_time:
                 await message.answer(messages["set_reg_end_date_invalid"])
-                # await state.clear()
                 return
             set_setting("reg_end_date", date_text)
             await message.answer(
                 messages["set_reg_end_date_success"].format(date=date_text)
             )
-            logger.info(f"Дата окончания регистрации установлена: {date_text}")
+            logger.info(f"Дата и время окончания регистрации установлены: {date_text}")
         except ValueError:
             await message.answer(messages["set_reg_end_date_invalid_format"])
             await state.clear()
