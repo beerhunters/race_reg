@@ -1,5 +1,6 @@
 import os
 from datetime import datetime
+from pytz import timezone
 
 from aiogram import Dispatcher, Bot, F
 from aiogram.filters import Command, CommandStart, StateFilter
@@ -116,8 +117,11 @@ def register_registration_handlers(dp: Dispatcher, bot: Bot, admin_id: int):
         reg_end_date = get_setting("reg_end_date")
         if reg_end_date:
             try:
-                end_date = datetime.strptime(reg_end_date, "%d.%m.%Y")
-                if datetime.now() > end_date:
+                end_date = datetime.strptime(reg_end_date, "%H:%M %d.%m.%Y")
+                moscow_tz = timezone("Europe/Moscow")
+                end_date = moscow_tz.localize(end_date)
+                current_time = datetime.now(moscow_tz)
+                if current_time > end_date:
                     logger.info(
                         f"Попытка регистрации после окончания: user_id={callback_query.from_user.id}"
                     )
