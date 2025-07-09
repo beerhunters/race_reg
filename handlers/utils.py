@@ -91,6 +91,7 @@ class RegistrationForm(StatesGroup):
     waiting_for_notify_with_text_message = State()
     waiting_for_notify_with_text_photo = State()
     waiting_for_notify_unpaid_message = State()
+    waiting_for_reg_end_date = State()
     processed = State()
 
 

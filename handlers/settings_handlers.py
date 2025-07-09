@@ -1,8 +1,11 @@
+from datetime import datetime
+
 from aiogram import Dispatcher, Bot, F
 from aiogram.filters import Command
+from aiogram.fsm.context import FSMContext
 from aiogram.types import Message
 from aiogram.exceptions import TelegramBadRequest, TelegramForbiddenError
-from .utils import logger, messages
+from .utils import logger, messages, RegistrationForm
 from database import (
     get_setting,
     set_setting,
@@ -107,3 +110,35 @@ def register_settings_handlers(dp: Dispatcher, bot: Bot, admin_id: int):
             await message.answer(
                 "Ошибка при изменении лимита бегунов. Попробуйте снова."
             )
+
+    @dp.message(Command("set_reg_end_date"))
+    async def set_reg_end_date(message: Message, state: FSMContext):
+        if message.from_user.id != admin_id:
+            await message.answer(messages["set_reg_end_date_access_denied"])
+            return
+        await message.answer(messages["set_reg_end_date_prompt"])
+        await state.set_state(RegistrationForm.waiting_for_reg_end_date)
+
+    @dp.message(RegistrationForm.waiting_for_reg_end_date)
+    async def process_reg_end_date(message: Message, state: FSMContext):
+        if message.from_user.id != admin_id:
+            await message.answer(messages["set_reg_end_date_access_denied"])
+            await state.clear()
+            return
+        date_text = message.text.strip()
+        try:
+            end_date = datetime.strptime(date_text, "%d.%m.%Y")
+            if end_date < datetime.now():
+            # if end_date.date() < datetime.now().date():
+                await message.answer(messages["set_reg_end_date_invalid"])
+                # await state.clear()
+                return
+            set_setting("reg_end_date", date_text)
+            await message.answer(
+                messages["set_reg_end_date_success"].format(date=date_text)
+            )
+            logger.info(f"Дата окончания регистрации установлена: {date_text}")
+        except ValueError:
+            await message.answer(messages["set_reg_end_date_invalid_format"])
+            await state.clear()
+        await state.clear()
