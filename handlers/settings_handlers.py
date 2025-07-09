@@ -129,7 +129,7 @@ def register_settings_handlers(dp: Dispatcher, bot: Bot, admin_id: int):
         try:
             end_date = datetime.strptime(date_text, "%d.%m.%Y")
             if end_date < datetime.now():
-            # if end_date.date() < datetime.now().date():
+                # if end_date.date() < datetime.now().date():
                 await message.answer(messages["set_reg_end_date_invalid"])
                 # await state.clear()
                 return
