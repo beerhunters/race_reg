@@ -1,4 +1,5 @@
 import os
+from datetime import datetime
 
 from aiogram import Dispatcher, Bot, F
 from aiogram.filters import Command, CommandStart, StateFilter
@@ -112,6 +113,21 @@ def register_registration_handlers(dp: Dispatcher, bot: Bot, admin_id: int):
         logger.info(
             f"Нажата кнопка 'Регистрация' от user_id={callback_query.from_user.id}"
         )
+        reg_end_date = get_setting("reg_end_date")
+        if reg_end_date:
+            try:
+                end_date = datetime.strptime(reg_end_date, "%d.%m.%Y")
+                if datetime.now() > end_date:
+                    logger.info(
+                        f"Попытка регистрации после окончания: user_id={callback_query.from_user.id}"
+                    )
+                    await callback_query.message.answer(messages["registration_closed"])
+                    await callback_query.message.delete()
+                    return
+            except ValueError:
+                logger.error(
+                    f"Некорректный формат даты окончания регистрации: {reg_end_date}"
+                )
         await callback_query.message.answer("Пожалуйста, введите ваше имя.")
         await state.set_state(RegistrationForm.waiting_for_name)
         await callback_query.answer()

@@ -281,19 +281,35 @@ def add_participant(
         return False
 
 
+# def get_setting(key: str):
+#     try:
+#         with sqlite3.connect(DB_PATH, timeout=10) as conn:
+#             cursor = conn.cursor()
+#             cursor.execute("SELECT value FROM settings WHERE key = ?", (key,))
+#             result = cursor.fetchone()
+#             return int(result[0]) if result else None
+#     except sqlite3.Error as e:
+#         logger.error(f"Ошибка при получении настройки {key}: {e}")
+#         return None
 def get_setting(key: str):
     try:
-        with sqlite3.connect(DB_PATH, timeout=10) as conn:
-            cursor = conn.cursor()
-            cursor.execute("SELECT value FROM settings WHERE key = ?", (key,))
-            result = cursor.fetchone()
-            return int(result[0]) if result else None
-    except sqlite3.Error as e:
-        logger.error(f"Ошибка при получении настройки {key}: {e}")
+        conn = sqlite3.connect(DB_PATH)
+        cursor = conn.cursor()
+        cursor.execute("SELECT value FROM settings WHERE key = ?", (key,))
+        result = cursor.fetchone()
+        if result:
+            if key == "reg_end_date":
+                return result[0]
+            return int(result[0]) if result[0].isdigit() else result[0]
         return None
+    except sqlite3.Error as e:
+        logger.error(f"Ошибка получения настройки {key}: {e}")
+        return None
+    finally:
+        conn.close()
 
 
-def set_setting(key: str, value: int):
+def set_setting(key: str, value):
     try:
         with sqlite3.connect(DB_PATH, timeout=10) as conn:
             cursor = conn.cursor()
