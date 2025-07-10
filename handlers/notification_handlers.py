@@ -287,7 +287,9 @@ def register_notification_handlers(dp: Dispatcher, bot: Bot, admin_id: int):
 
     @dp.message(Command("notify_unpaid"))
     @dp.callback_query(F.data == "admin_notify_unpaid")
-    async def notify_unpaid_participants(event: [Message, CallbackQuery], state: FSMContext):
+    async def notify_unpaid_participants(
+        event: [Message, CallbackQuery], state: FSMContext
+    ):
         user_id = event.from_user.id
         if user_id != admin_id:
             await event.answer(messages["notify_unpaid_access_denied"])
