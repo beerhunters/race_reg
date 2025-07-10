@@ -92,6 +92,10 @@ class RegistrationForm(StatesGroup):
     waiting_for_notify_with_text_photo = State()
     waiting_for_notify_unpaid_message = State()
     waiting_for_reg_end_date = State()
+    waiting_for_paid_id = State()
+    waiting_for_bib = State()
+    waiting_for_remove_id = State()
+    waiting_for_runners = State()
     processed = State()
 
 

@@ -3,7 +3,7 @@ import os
 from aiogram import Dispatcher, Bot, F
 from aiogram.filters import Command, StateFilter
 from aiogram.fsm.context import FSMContext
-from aiogram.types import Message, FSInputFile
+from aiogram.types import Message, FSInputFile, CallbackQuery
 from aiogram.exceptions import TelegramBadRequest, TelegramForbiddenError
 from .utils import (
     logger,
@@ -23,14 +23,19 @@ def register_notification_handlers(dp: Dispatcher, bot: Bot, admin_id: int):
     logger.info("Регистрация обработчиков уведомлений")
 
     @dp.message(Command("notify_all"))
-    async def notify_all_participants(message: Message):
-        logger.info(f"Команда /notify_all от user_id={message.from_user.id}")
-        if message.from_user.id != admin_id:
-            logger.warning(
-                f"Доступ к /notify_all запрещен для user_id={message.from_user.id}"
-            )
-            await message.answer(messages["notify_all_access_denied"])
+    @dp.callback_query(F.data == "admin_notify_all")
+    async def notify_all_participants(event: [Message, CallbackQuery]):
+        user_id = event.from_user.id
+        if user_id != admin_id:
+            await event.answer(messages["notify_all_access_denied"])
             return
+        logger.info(f"Команда /notify_all от user_id={user_id}")
+        if isinstance(event, CallbackQuery):
+            await event.message.delete()
+            message = event.message
+        else:
+            await event.delete()
+            message = event
         participants = get_all_participants()
         if not participants:
             logger.info("Нет зарегистрированных участников для уведомления")
@@ -94,14 +99,19 @@ def register_notification_handlers(dp: Dispatcher, bot: Bot, admin_id: int):
         logger.info(f"Уведомления отправлены {success_count} участникам")
 
     @dp.message(Command("notify_with_text"))
-    async def notify_with_text(message: Message, state: FSMContext):
-        logger.info(f"Команда /notify_with_text от user_id={message.from_user.id}")
-        if message.from_user.id != admin_id:
-            logger.warning(
-                f"Доступ к /notify_with_text запрещен для user_id={message.from_user.id}"
-            )
-            await message.answer(messages["notify_with_text_access_denied"])
+    @dp.callback_query(F.data == "admin_notify_with_text")
+    async def notify_with_text(event: [Message, CallbackQuery], state: FSMContext):
+        user_id = event.from_user.id
+        if user_id != admin_id:
+            await event.answer(messages["notify_with_text_access_denied"])
             return
+        logger.info(f"Команда /notify_with_text от user_id={user_id}")
+        if isinstance(event, CallbackQuery):
+            await event.message.delete()
+            message = event.message
+        else:
+            await event.delete()
+            message = event
         participants = get_all_participants()
         if not participants:
             logger.info("Нет зарегистрированных участников для уведомления")
@@ -276,14 +286,21 @@ def register_notification_handlers(dp: Dispatcher, bot: Bot, admin_id: int):
         )
 
     @dp.message(Command("notify_unpaid"))
-    async def notify_unpaid_participants(message: Message, state: FSMContext):
-        logger.info(f"Команда /notify_unpaid от user_id={message.from_user.id}")
-        if message.from_user.id != admin_id:
-            logger.warning(
-                f"Доступ к /notify_unpaid запрещен для user_id={message.from_user.id}"
-            )
-            await message.answer(messages["notify_unpaid_access_denied"])
+    @dp.callback_query(F.data == "admin_notify_unpaid")
+    async def notify_unpaid_participants(
+        event: [Message, CallbackQuery], state: FSMContext
+    ):
+        user_id = event.from_user.id
+        if user_id != admin_id:
+            await event.answer(messages["notify_unpaid_access_denied"])
             return
+        logger.info(f"Команда /notify_unpaid от user_id={user_id}")
+        if isinstance(event, CallbackQuery):
+            await event.message.delete()
+            message = event.message
+        else:
+            await event.delete()
+            message = event
         try:
             with sqlite3.connect("/app/data/race_participants.db", timeout=10) as conn:
                 cursor = conn.cursor()

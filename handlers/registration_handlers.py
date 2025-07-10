@@ -5,7 +5,12 @@ from pytz import timezone
 from aiogram import Dispatcher, Bot, F
 from aiogram.filters import Command, CommandStart, StateFilter
 from aiogram.fsm.context import FSMContext
-from aiogram.types import Message, FSInputFile
+from aiogram.types import (
+    Message,
+    FSInputFile,
+    InlineKeyboardMarkup,
+    InlineKeyboardButton,
+)
 from aiogram.exceptions import TelegramBadRequest, TelegramForbiddenError
 from .utils import (
     logger,
@@ -27,6 +32,41 @@ from database import (
 
 
 def register_registration_handlers(dp: Dispatcher, bot: Bot, admin_id: int):
+
+    def create_admin_commands_keyboard():
+        """Создаёт инлайн-клавиатуру с командами администратора."""
+        commands = [
+            ("participants", "📋 Список участников"),
+            ("pending", "⏳ Незавершённые регистрации"),
+            ("stats", "📊 Статистика"),
+            ("paid", "💳 Подтвердить оплату"),
+            ("set_bib", "🏷 Присвоить номер"),
+            ("remove", "🗑 Удалить участника"),
+            ("export", "📤 Экспорт данных"),
+            ("info", "ℹ️ Информация о забеге"),
+            ("create_afisha", "🖼 Обновить афишу"),
+            ("update_sponsor", "🎯 Обновить спонсора"),
+            ("edit_runners", "🏃 Изменить лимит"),
+            ("set_reg_end_date", "⏰ Установить дату"),
+            ("notify_all", "📢 Уведомить всех"),
+            ("notify_with_text", "✉️ Кастомное уведомление"),
+            ("notify_unpaid", "💸 Уведомить неоплативших"),
+        ]
+        keyboard_buttons = []
+        # Группируем по 2 кнопки
+        for i in range(0, len(commands), 2):
+            row = []
+            for j in range(2):
+                if i + j < len(commands):
+                    cmd, name = commands[i + j]
+                    row.append(
+                        InlineKeyboardButton(text=name, callback_data=f"admin_{cmd}")
+                    )
+            keyboard_buttons.append(row)
+
+        keyboard = InlineKeyboardMarkup(inline_keyboard=keyboard_buttons)
+        return keyboard
+
     logger.info("Регистрация обработчиков регистрации")
 
     @dp.message(CommandStart())
@@ -37,7 +77,10 @@ def register_registration_handlers(dp: Dispatcher, bot: Bot, admin_id: int):
                 f"Пользователь user_id={message.from_user.id} является администратором"
             )
             try:
-                await message.answer(messages["admin_commands"])
+                await message.answer(
+                    messages["admin_commands"],
+                    reply_markup=create_admin_commands_keyboard(),
+                )
             except TelegramBadRequest as e:
                 logger.error(
                     f"Ошибка TelegramBadRequest при отправке admin_commands: {e}"

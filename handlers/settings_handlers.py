@@ -3,7 +3,7 @@ from datetime import datetime
 from aiogram import Dispatcher, Bot, F
 from aiogram.filters import Command
 from aiogram.fsm.context import FSMContext
-from aiogram.types import Message
+from aiogram.types import Message, CallbackQuery
 from aiogram.exceptions import TelegramBadRequest, TelegramForbiddenError
 from pytz import timezone
 
@@ -20,20 +20,24 @@ from database import (
 def register_settings_handlers(dp: Dispatcher, bot: Bot, admin_id: int):
     logger.info("Регистрация обработчиков настроек")
 
-    @dp.message(Command("edit_runners"))
-    async def edit_runners(message: Message):
-        logger.info(f"Команда /edit_runners от user_id={message.from_user.id}")
-        if message.from_user.id != admin_id:
-            logger.warning(
-                f"Доступ к /edit_runners запрещен для user_id={message.from_user.id}"
-            )
-            await message.answer(messages["edit_runners_access_denied"])
+    async def edit_runners(event: [Message, CallbackQuery], state: FSMContext):
+        user_id = event.from_user.id
+        if user_id != admin_id:
+            await event.answer(messages["edit_runners_access_denied"])
             return
-        parts = message.text.split()
-        if len(parts) != 2 or not parts[1].isdigit():
-            await message.answer(messages["edit_runners_usage"])
-            return
-        new_max_runners = int(parts[1])
+        logger.info(f"Команда /edit_runners от user_id={user_id}")
+        if isinstance(event, CallbackQuery):
+            await event.message.delete()
+            message = event.message
+        else:
+            await event.delete()
+            message = event
+        await message.answer(messages["wait_for_runners"])
+        await state.set_state(RegistrationForm.waiting_for_runners)
+
+    @dp.message(RegistrationForm.waiting_for_runners)
+    async def process_edit_runners(message: Message, state: FSMContext):
+        new_max_runners = int(message.text)
         if new_max_runners < 0:
             await message.answer(messages["edit_runners_invalid"])
             return
@@ -113,11 +117,28 @@ def register_settings_handlers(dp: Dispatcher, bot: Bot, admin_id: int):
                 "Ошибка при изменении лимита бегунов. Попробуйте снова."
             )
 
+    @dp.message(Command("edit_runners"))
+    async def cmd_edit_runners(message: Message, state: FSMContext):
+        await edit_runners(message, state)
+
+    @dp.callback_query(F.data == "admin_edit_runners")
+    async def callback_edit_runners(callback_query: CallbackQuery, state: FSMContext):
+        await edit_runners(callback_query, state)
+
     @dp.message(Command("set_reg_end_date"))
-    async def set_reg_end_date(message: Message, state: FSMContext):
-        if message.from_user.id != admin_id:
-            await message.answer(messages["set_reg_end_date_access_denied"])
+    @dp.callback_query(F.data == "admin_set_reg_end_date")
+    async def set_reg_end_date(event: [Message, CallbackQuery], state: FSMContext):
+        user_id = event.from_user.id
+        if user_id != admin_id:
+            await event.answer(messages["set_reg_end_date_access_denied"])
             return
+        logger.info(f"Команда /set_reg_end_date от user_id={user_id}")
+        if isinstance(event, CallbackQuery):
+            await event.message.delete()
+            message = event.message
+        else:
+            await event.delete()
+            message = event
         await message.answer(messages["set_reg_end_date_prompt"])
         await state.set_state(RegistrationForm.waiting_for_reg_end_date)
 
