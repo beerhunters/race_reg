@@ -1,8 +1,6 @@
 import json
-import logging
 import logging.handlers
 import os
-from aiogram import Dispatcher, Bot
 from aiogram.fsm.state import State, StatesGroup
 from aiogram.types import InlineKeyboardMarkup, InlineKeyboardButton
 
@@ -85,6 +83,7 @@ class RegistrationForm(StatesGroup):
     waiting_for_name = State()
     waiting_for_role = State()
     waiting_for_target_time = State()
+    waiting_for_gender = State()
     waiting_for_info_message = State()
     waiting_for_afisha_image = State()
     waiting_for_sponsor_image = State()
@@ -145,6 +144,23 @@ def create_confirmation_keyboard():
                     callback_data="decline_participation",
                 ),
             ]
+        ]
+    )
+    return keyboard
+
+
+def create_gender_keyboard():
+    keyboard = InlineKeyboardMarkup(
+        inline_keyboard=[
+            [
+                InlineKeyboardButton(
+                    text=messages["gender_male"], callback_data="male"
+                ),
+                InlineKeyboardButton(
+                    text=messages["gender_female"], callback_data="female"
+                ),
+            ],
+            [InlineKeyboardButton(text="🏠 Главное меню", callback_data="main_menu")],
         ]
     )
     return keyboard

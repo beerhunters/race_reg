@@ -34,7 +34,8 @@ def init_db():
                     reg_date TEXT NOT NULL,
                     payment_status TEXT DEFAULT 'pending',
                     bib_number INTEGER,
-                    result TEXT
+                    result TEXT,
+                    gender TEXT
                 )
             """
             )
@@ -272,15 +273,15 @@ def get_participant_by_user_id(user_id: int):
 
 
 def add_participant(
-    user_id: int, username: str, name: str, target_time: str, role: str
+    user_id: int, username: str, name: str, target_time: str, role: str, gender: str
 ):
     try:
         with sqlite3.connect(DB_PATH) as conn:
             cursor = conn.cursor()
             cursor.execute(
                 """
-                INSERT INTO participants (user_id, username, name, target_time, role, reg_date, payment_status)
-                VALUES (?, ?, ?, ?, ?, datetime('now'), ?)
+                INSERT INTO participants (user_id, username, name, target_time, role, reg_date, payment_status, gender)
+                VALUES (?, ?, ?, ?, ?, datetime('now'), ?, ?)
                 """,
                 (
                     user_id,
@@ -289,6 +290,7 @@ def add_participant(
                     target_time,
                     role,
                     "pending" if role == "runner" else "-",
+                    gender,
                 ),
             )
             conn.commit()
@@ -299,16 +301,6 @@ def add_participant(
         return False
 
 
-# def get_setting(key: str):
-#     try:
-#         with sqlite3.connect(DB_PATH, timeout=10) as conn:
-#             cursor = conn.cursor()
-#             cursor.execute("SELECT value FROM settings WHERE key = ?", (key,))
-#             result = cursor.fetchone()
-#             return int(result[0]) if result else None
-#     except sqlite3.Error as e:
-#         logger.error(f"Ошибка при получении настройки {key}: {e}")
-#         return None
 def get_setting(key: str):
     try:
         conn = sqlite3.connect(DB_PATH)
@@ -343,39 +335,6 @@ def set_setting(key: str, value):
         return False
 
 
-# def save_race_to_db(race_date: str) -> bool:
-#     try:
-#         date_obj = datetime.strptime(race_date, "%d.%m.%Y")
-#         table_name = f"race_{date_obj.strftime('%d_%m_%Y')}"
-#         conn = sqlite3.connect(DB_PATH)
-#         cursor = conn.cursor()
-#         cursor.execute("SELECT COUNT(*) FROM participants")
-#         if cursor.fetchone()[0] == 0:
-#             conn.close()
-#             return False
-#         cursor.execute(
-#             f"""
-#             CREATE TABLE IF NOT EXISTS {table_name} (
-#                 user_id INTEGER PRIMARY KEY,
-#                 username TEXT,
-#                 name TEXT,
-#                 target_time TEXT,
-#                 role TEXT,
-#                 registration_date TEXT,
-#                 payment_status TEXT,
-#                 bib_number INTEGER,
-#                 result TEXT
-#             )
-#         """
-#         )
-#         cursor.execute(f"INSERT INTO {table_name} SELECT * FROM participants")
-#         conn.commit()
-#         conn.close()
-#         logger.info(f"Данные гонки сохранены в таблице {table_name}")
-#         return True
-#     except ValueError:
-#         logger.error(f"Некорректный формат даты: {race_date}")
-#         return False
 def save_race_to_db(race_date: str) -> bool:
     try:
         date_obj = datetime.strptime(race_date, "%d.%m.%Y")
@@ -405,7 +364,8 @@ def save_race_to_db(race_date: str) -> bool:
                 registration_date TEXT,
                 payment_status TEXT,
                 bib_number INTEGER,
-                result TEXT
+                result TEXT,
+                gender TEXT
             )
         """
         )
@@ -450,7 +410,7 @@ def get_race_data(race_date: str):
         conn = sqlite3.connect(DB_PATH)
         cursor = conn.cursor()
         cursor.execute(
-            f"SELECT user_id, username, name, target_time, role, registration_date, payment_status, bib_number, result FROM {table_name}"
+            f"SELECT user_id, username, name, target_time, role, registration_date, payment_status, bib_number, result, gender FROM {table_name}"
         )
         data = cursor.fetchall()
         conn.close()

@@ -1,5 +1,4 @@
 import asyncio
-import logging
 import logging.handlers
 import os
 import json
@@ -11,7 +10,6 @@ from aiogram.enums import ParseMode
 
 from database import init_db
 
-# from handlers import register_handlers
 
 from handler_register import register_all_handlers
 
@@ -92,7 +90,6 @@ dp = Dispatcher(storage=MemoryStorage())
 async def main():
     logger.info("Запуск бота")
     init_db()
-    # register_handlers(dp, bot, ADMIN_ID)
     register_all_handlers(dp, bot, ADMIN_ID)
     await bot.set_my_commands(
         [
