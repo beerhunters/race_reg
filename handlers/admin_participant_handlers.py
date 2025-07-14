@@ -91,7 +91,7 @@ def register_admin_participant_handlers(dp: Dispatcher, bot: Bot, admin_id: int)
                     name=name,
                     target_time=target_time,
                     role=role,
-                    date=formatted_date,
+                    # date=formatted_date,
                     status=status_emoji,
                     username=username or "не указан",
                     bib_number=bib_field,
