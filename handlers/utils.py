@@ -96,6 +96,7 @@ class RegistrationForm(StatesGroup):
     waiting_for_bib = State()
     waiting_for_remove_id = State()
     waiting_for_runners = State()
+    waiting_for_result = State()
     processed = State()
 
 

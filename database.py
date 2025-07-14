@@ -32,7 +32,8 @@ def init_db():
                     role TEXT NOT NULL,
                     reg_date TEXT NOT NULL,
                     payment_status TEXT DEFAULT 'pending',
-                    bib_number INTEGER
+                    bib_number INTEGER,
+                    result TEXT
                 )
             """
             )
@@ -207,6 +208,22 @@ def set_bib_number(user_id: int, bib_number: int):
             return True
     except sqlite3.Error as e:
         logger.error(f"Ошибка при установке бегового номера для user_id={user_id}: {e}")
+        return False
+
+
+def set_result(user_id: int, result: str):
+    try:
+        with sqlite3.connect(DB_PATH) as conn:
+            cursor = conn.cursor()
+            cursor.execute(
+                "UPDATE participants SET result = ? WHERE user_id = ?",
+                (result, user_id),
+            )
+            success = cursor.rowcount > 0
+            conn.commit()
+            return success
+    except sqlite3.Error as e:
+        logger.error(f"Ошибка при записи результата для user_id={user_id}: {e}")
         return False
 
 

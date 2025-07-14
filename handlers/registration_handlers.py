@@ -51,6 +51,7 @@ def register_registration_handlers(dp: Dispatcher, bot: Bot, admin_id: int):
             ("notify_all", "📢 Уведомить всех"),
             ("notify_with_text", "✉️ Кастомное уведомление"),
             ("notify_unpaid", "💸 Уведомить неоплативших"),
+            ("notify_results", "🏅 Отправить результаты"),
         ]
         keyboard_buttons = []
         # Группируем по 2 кнопки
