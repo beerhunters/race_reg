@@ -839,7 +839,7 @@ def register_admin_participant_handlers(dp: Dispatcher, bot: Bot, admin_id: int)
                 return float("inf")
 
         sorted_runners = sorted(runners, key=lambda x: time_to_seconds(x[4]))
-        top_winners = messages["top_winners_header"]
+        top_winners = "Пивной Квартал 2025\nДевичий зачёт\n\n"
         for place, (user_id, username, name, bib_number, result) in enumerate(
             sorted_runners, 1
         ):
