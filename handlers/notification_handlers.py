@@ -1,3 +1,4 @@
+import re
 import sqlite3
 import os
 from aiogram import Dispatcher, Bot, F
@@ -17,6 +18,7 @@ from database import (
     delete_participant,
     delete_pending_registration,
     set_result,
+    get_participant_by_user_id,
 )
 
 
@@ -407,6 +409,35 @@ def register_notification_handlers(dp: Dispatcher, bot: Bot, admin_id: int):
         logger.info(f"Уведомления отправлены {success_count} неоплатившим участникам")
         await state.clear()
 
+    # @dp.message(Command("notify_results"))
+    # @dp.callback_query(F.data == "admin_notify_results")
+    # async def notify_results(event: [Message, CallbackQuery], state: FSMContext):
+    #     user_id = event.from_user.id
+    #     if user_id != admin_id:
+    #         await event.answer(messages["notify_results_access_denied"])
+    #         return
+    #     logger.info(f"Команда /notify_results от user_id={user_id}")
+    #     if isinstance(event, CallbackQuery):
+    #         await event.message.delete()
+    #         message = event.message
+    #     else:
+    #         await event.delete()
+    #         message = event
+    #     participants = get_all_participants()
+    #     runners = [p for p in participants if p[4] == "runner"]
+    #     if not runners:
+    #         await message.answer(messages["notify_results_no_runners"])
+    #         return
+    #     await state.update_data(runners=runners, current_runner_index=0)
+    #     runner = runners[0]
+    #     await message.answer(
+    #         messages["notify_results_prompt"].format(
+    #             name=runner[2], user_id=runner[0], username=runner[1] or "не указан"
+    #         )
+    #     )
+    #     await state.set_state(RegistrationForm.waiting_for_result)
+    #     if isinstance(event, CallbackQuery):
+    #         await event.answer()
     @dp.message(Command("notify_results"))
     @dp.callback_query(F.data == "admin_notify_results")
     async def notify_results(event: [Message, CallbackQuery], state: FSMContext):
@@ -421,76 +452,116 @@ def register_notification_handlers(dp: Dispatcher, bot: Bot, admin_id: int):
         else:
             await event.delete()
             message = event
-        participants = get_all_participants()
-        runners = [p for p in participants if p[4] == "runner"]
-        if not runners:
-            await message.answer(messages["notify_results_no_runners"])
-            return
-        await state.update_data(runners=runners, current_runner_index=0)
-        runner = runners[0]
-        await message.answer(
-            messages["notify_results_prompt"].format(
-                name=runner[2], user_id=runner[0], username=runner[1] or "не указан"
-            )
-        )
+        await message.answer(messages["notify_results_prompt"])
         await state.set_state(RegistrationForm.waiting_for_result)
         if isinstance(event, CallbackQuery):
             await event.answer()
 
+    # @dp.message(StateFilter(RegistrationForm.waiting_for_result))
+    # async def process_result(message: Message, state: FSMContext):
+    #     result = message.text.strip()
+    #     if not result:
+    #         await message.answer(
+    #             "Пожалуйста, введите результат (например, '12:34' или 'DNF')."
+    #         )
+    #         return
+    #     user_data = await state.get_data()
+    #     runners = user_data.get("runners", [])
+    #     current_index = user_data.get("current_runner_index", 0)
+    #     if current_index >= len(runners):
+    #         await message.answer(
+    #             messages["notify_results_success"].format(count=len(runners))
+    #         )
+    #         await state.clear()
+    #         return
+    #     runner = runners[current_index]
+    #     user_id = runner[0]
+    #     name = runner[2]
+    #     username = runner[1] or "не указан"
+    #     bib_number = runner[7] if runner[7] is not None else "не присвоен"
+    #     success = set_result(user_id, result)
+    #     if not success:
+    #         await message.answer(
+    #             f"Ошибка записи результата для {name} (ID: <code>{user_id}</code>)."
+    #         )
+    #         return
+    #     try:
+    #         await bot.send_message(
+    #             user_id,
+    #             messages["result_notification"].format(
+    #                 name=name, bib_number=bib_number, result=result
+    #             ),
+    #         )
+    #         logger.info(f"Результат отправлен user_id={user_id}: {result}")
+    #     except Exception as e:
+    #         logger.error(f"Ошибка отправки результата user_id={user_id}: {e}")
+    #         await message.answer(
+    #             f"🚫 Не удалось отправить результат пользователю {name} (ID: <code>{user_id}</code>, @{username})"
+    #         )
+    #     current_index += 1
+    #     if current_index < len(runners):
+    #         next_runner = runners[current_index]
+    #         await state.update_data(current_runner_index=current_index)
+    #         await message.answer(
+    #             messages["notify_results_prompt"].format(
+    #                 name=next_runner[2],
+    #                 user_id=next_runner[0],
+    #                 username=next_runner[1] or "не указан",
+    #             )
+    #         )
+    #     else:
+    #         await message.answer(
+    #             messages["notify_results_success"].format(count=len(runners))
+    #         )
+    #         await state.clear()
     @dp.message(StateFilter(RegistrationForm.waiting_for_result))
-    async def process_result(message: Message, state: FSMContext):
-        result = message.text.strip()
-        if not result:
-            await message.answer(
-                "Пожалуйста, введите результат (например, '12:34' или 'DNF')."
-            )
-            return
-        user_data = await state.get_data()
-        runners = user_data.get("runners", [])
-        current_index = user_data.get("current_runner_index", 0)
-        if current_index >= len(runners):
-            await message.answer(
-                messages["notify_results_success"].format(count=len(runners))
-            )
-            await state.clear()
-            return
-        runner = runners[current_index]
-        user_id = runner[0]
-        name = runner[2]
-        username = runner[1] or "не указан"
-        bib_number = runner[7] if runner[7] is not None else "не присвоен"
-        success = set_result(user_id, result)
-        if not success:
-            await message.answer(
-                f"Ошибка записи результата для {name} (ID: <code>{user_id}</code>)."
-            )
+    async def process_result_input(message: Message, state: FSMContext):
+        parts = message.text.strip().split()
+        if len(parts) != 2:
+            await message.answer(messages["notify_results_usage"])
             return
         try:
-            await bot.send_message(
-                user_id,
-                messages["result_notification"].format(
-                    name=name, bib_number=bib_number, result=result
-                ),
-            )
-            logger.info(f"Результат отправлен user_id={user_id}: {result}")
-        except Exception as e:
-            logger.error(f"Ошибка отправки результата user_id={user_id}: {e}")
-            await message.answer(
-                f"🚫 Не удалось отправить результат пользователю {name} (ID: <code>{user_id}</code>, @{username})"
-            )
-        current_index += 1
-        if current_index < len(runners):
-            next_runner = runners[current_index]
-            await state.update_data(current_runner_index=current_index)
-            await message.answer(
-                messages["notify_results_prompt"].format(
-                    name=next_runner[2],
-                    user_id=next_runner[0],
-                    username=next_runner[1] or "не указан",
+            user_id = int(parts[0])
+            result_input = parts[1].lower()
+            participant = get_participant_by_user_id(user_id)
+            if not participant or participant[4] != "runner":
+                await message.answer(messages["notify_results_user_not_found"])
+                return
+            name = participant[2]
+            username = participant[1] or "не указан"
+            bib_number = participant[7] if participant[7] is not None else "не присвоен"
+            # Validate result format
+            if result_input == "dnf":
+                result = "DNF"
+            elif re.match(r"^\d+:[0-5]\d$", result_input):
+                minutes, seconds = map(int, result_input.split(":"))
+                result = f"0:{minutes:02d}:{seconds:02d}"
+            else:
+                await message.answer(messages["notify_results_invalid_format"])
+                return
+            success = set_result(user_id, result)
+            if not success:
+                await message.answer(
+                    f"Ошибка записи результата для {name} (ID: <code>{user_id}</code>)."
                 )
-            )
-        else:
-            await message.answer(
-                messages["notify_results_success"].format(count=len(runners))
-            )
-            await state.clear()
+                return
+            try:
+                await bot.send_message(
+                    user_id,
+                    messages["result_notification"].format(
+                        name=name, bib_number=bib_number, result=result
+                    ),
+                )
+                logger.info(f"Результат отправлен user_id={user_id}: {result}")
+                await message.answer(
+                    messages["notify_results_success_single"].format(
+                        name=name, user_id=user_id, username=username, result=result
+                    )
+                )
+            except Exception as e:
+                logger.error(f"Ошибка отправки результата user_id={user_id}: {e}")
+                await message.answer(
+                    f"🚫 Не удалось отправить результат пользователю {name} (ID: <code>{user_id}</code>, @{username})"
+                )
+        except ValueError:
+            await message.answer(messages["notify_results_usage"])
