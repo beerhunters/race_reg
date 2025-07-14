@@ -591,3 +591,62 @@ def register_admin_participant_handlers(dp: Dispatcher, bot: Bot, admin_id: int)
         callback_query: CallbackQuery, state: FSMContext
     ):
         await export_participants(callback_query, state)
+
+    async def show_top_winners(event: [Message, CallbackQuery]):
+        user_id = event.from_user.id
+        if user_id != admin_id:
+            await event.answer(messages["top_winners_access_denied"])
+            return
+        logger.info(f"Команда /top_winners от user_id={user_id}")
+        if isinstance(event, CallbackQuery):
+            await event.message.delete()
+            message = event.message
+        else:
+            await event.delete()
+            message = event
+        conn = sqlite3.connect("/app/data/race_participants.db")
+        cursor = conn.cursor()
+        cursor.execute(
+            "SELECT user_id, username, name, bib_number, result FROM participants WHERE role = 'runner' AND result IS NOT NULL AND result != 'DNF'"
+        )
+        runners = cursor.fetchall()
+        conn.close()
+        if not runners:
+            await message.answer(messages["top_winners_empty"])
+            return
+
+        # Convert times to seconds for sorting
+        def time_to_seconds(time_str):
+            try:
+                parts = time_str.split(":")
+                if len(parts) == 3:
+                    hours, minutes, seconds = map(int, parts)
+                    return hours * 3600 + minutes * 60 + seconds
+                return float("inf")
+            except:
+                return float("inf")
+
+        sorted_runners = sorted(runners, key=lambda x: time_to_seconds(x[4]))[:3]
+        top_winners = messages["top_winners_header"]
+        for place, (user_id, username, name, bib_number, result) in enumerate(
+            sorted_runners, 1
+        ):
+            bib_field = f"{bib_number}" if bib_number is not None else "не присвоен"
+            top_winners += messages["top_winners_info"].format(
+                place=place,
+                name=name,
+                username=username or "не указан",
+                bib_number=bib_field,
+                result=result,
+            )
+        await message.answer(top_winners)
+        if isinstance(event, CallbackQuery):
+            await event.answer()
+
+    @dp.message(Command("top_winners"))
+    async def cmd_top_winners(message: Message):
+        await show_top_winners(message)
+
+    @dp.callback_query(F.data == "admin_top_winners")
+    async def callback_top_winners(callback_query: CallbackQuery):
+        await show_top_winners(callback_query)
