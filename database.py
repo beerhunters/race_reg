@@ -2,6 +2,7 @@ import json
 import sqlite3
 import logging
 import os
+from datetime import datetime
 
 logger = logging.getLogger(__name__)
 DB_PATH = "/app/data/race_participants.db"
@@ -340,3 +341,120 @@ def set_setting(key: str, value):
     except sqlite3.Error as e:
         logger.error(f"Ошибка при установке настройки {key}: {e}")
         return False
+
+
+# def save_race_to_db(race_date: str) -> bool:
+#     try:
+#         date_obj = datetime.strptime(race_date, "%d.%m.%Y")
+#         table_name = f"race_{date_obj.strftime('%d_%m_%Y')}"
+#         conn = sqlite3.connect(DB_PATH)
+#         cursor = conn.cursor()
+#         cursor.execute("SELECT COUNT(*) FROM participants")
+#         if cursor.fetchone()[0] == 0:
+#             conn.close()
+#             return False
+#         cursor.execute(
+#             f"""
+#             CREATE TABLE IF NOT EXISTS {table_name} (
+#                 user_id INTEGER PRIMARY KEY,
+#                 username TEXT,
+#                 name TEXT,
+#                 target_time TEXT,
+#                 role TEXT,
+#                 registration_date TEXT,
+#                 payment_status TEXT,
+#                 bib_number INTEGER,
+#                 result TEXT
+#             )
+#         """
+#         )
+#         cursor.execute(f"INSERT INTO {table_name} SELECT * FROM participants")
+#         conn.commit()
+#         conn.close()
+#         logger.info(f"Данные гонки сохранены в таблице {table_name}")
+#         return True
+#     except ValueError:
+#         logger.error(f"Некорректный формат даты: {race_date}")
+#         return False
+def save_race_to_db(race_date: str) -> bool:
+    try:
+        date_obj = datetime.strptime(race_date, "%d.%m.%Y")
+        table_name = f"race_{date_obj.strftime('%d_%m_%Y')}"
+        conn = sqlite3.connect(DB_PATH)
+        cursor = conn.cursor()
+        cursor.execute("SELECT COUNT(*) FROM participants")
+        if cursor.fetchone()[0] == 0:
+            conn.close()
+            return False
+        cursor.execute(
+            "SELECT name FROM sqlite_master WHERE type='table' AND name=?",
+            (table_name,),
+        )
+        table_exists = cursor.fetchone() is not None
+        if table_exists:
+            cursor.execute(f"DROP TABLE {table_name}")
+            logger.info(f"Существующая таблица {table_name} удалена перед обновлением")
+        cursor.execute(
+            f"""
+            CREATE TABLE {table_name} (
+                user_id INTEGER PRIMARY KEY,
+                username TEXT,
+                name TEXT,
+                target_time TEXT,
+                role TEXT,
+                registration_date TEXT,
+                payment_status TEXT,
+                bib_number INTEGER,
+                result TEXT
+            )
+        """
+        )
+        cursor.execute(f"INSERT INTO {table_name} SELECT * FROM participants")
+        conn.commit()
+        conn.close()
+        logger.info(
+            f"Данные гонки {'обновлены' if table_exists else 'сохранены'} в таблице {table_name}"
+        )
+        return True
+    except ValueError:
+        logger.error(f"Некорректный формат даты: {race_date}")
+        return False
+
+
+def clear_participants() -> bool:
+    conn = sqlite3.connect(DB_PATH)
+    cursor = conn.cursor()
+    cursor.execute("DELETE FROM participants")
+    success = cursor.rowcount >= 0
+    conn.commit()
+    conn.close()
+    logger.info("Таблица participants очищена")
+    return success
+
+
+def get_past_races():
+    conn = sqlite3.connect(DB_PATH)
+    cursor = conn.cursor()
+    cursor.execute(
+        "SELECT name FROM sqlite_master WHERE type='table' AND name LIKE 'race_%'"
+    )
+    races = [row[0].replace("race_", "").replace("_", ".") for row in cursor.fetchall()]
+    conn.close()
+    return sorted(races, key=lambda x: datetime.strptime(x, "%d.%m.%Y"), reverse=True)
+
+
+def get_race_data(race_date: str):
+    try:
+        date_obj = datetime.strptime(race_date, "%d.%m.%Y")
+        table_name = f"race_{date_obj.strftime('%d_%m_%Y')}"
+        conn = sqlite3.connect(DB_PATH)
+        cursor = conn.cursor()
+        cursor.execute(
+            f"SELECT user_id, username, name, target_time, role, registration_date, payment_status, bib_number, result FROM {table_name}"
+        )
+        data = cursor.fetchall()
+        conn.close()
+        return data
+    except ValueError:
+        logger.error(f"Некорректный формат даты: {race_date}")
+        return []

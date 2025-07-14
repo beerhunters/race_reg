@@ -6,7 +6,13 @@ import pytz
 from aiogram import Dispatcher, Bot, F
 from aiogram.exceptions import TelegramForbiddenError, TelegramBadRequest
 from aiogram.filters import Command
-from aiogram.types import Message, BufferedInputFile, CallbackQuery
+from aiogram.types import (
+    Message,
+    BufferedInputFile,
+    CallbackQuery,
+    InlineKeyboardMarkup,
+    InlineKeyboardButton,
+)
 from aiogram.fsm.context import FSMContext
 from .utils import logger, messages, config, RegistrationForm
 from database import (
@@ -19,6 +25,9 @@ from database import (
     set_bib_number,
     delete_participant,
     delete_pending_registration,
+    get_race_data,
+    get_past_races,
+    save_race_to_db,
 )
 
 
@@ -650,3 +659,231 @@ def register_admin_participant_handlers(dp: Dispatcher, bot: Bot, admin_id: int)
     @dp.callback_query(F.data == "admin_top_winners")
     async def callback_top_winners(callback_query: CallbackQuery):
         await show_top_winners(callback_query)
+
+    async def save_race(event: [Message, CallbackQuery], state: FSMContext):
+        user_id = event.from_user.id
+        if user_id != admin_id:
+            await event.answer(messages["save_race_access_denied"])
+            return
+        logger.info(f"Команда /save_race от user_id={user_id}")
+        if isinstance(event, CallbackQuery):
+            await event.message.delete()
+            message = event.message
+        else:
+            await event.delete()
+            message = event
+        await message.answer(messages["save_race_prompt"])
+        await state.set_state(RegistrationForm.waiting_for_race_date)
+        if isinstance(event, CallbackQuery):
+            await event.answer()
+
+    # async def process_save_race(message: Message, state: FSMContext):
+    #     race_date = message.text.strip()
+    #     try:
+    #         datetime.datetime.strptime(race_date, "%d.%m.%Y")
+    #         success = save_race_to_db(race_date)
+    #         if success:
+    #             await message.answer(
+    #                 messages["save_race_success"].format(date=race_date)
+    #             )
+    #             logger.info(f"Гонка сохранена для даты {race_date}")
+    #         else:
+    #             await message.answer(messages["save_race_empty"])
+    #             logger.info(
+    #                 f"Не удалось сохранить гонку для даты {race_date}: таблица participants пуста"
+    #             )
+    #     except ValueError:
+    #         await message.answer(messages["save_race_invalid_format"])
+    #         logger.error(f"Некорректный формат даты для /save_race: {race_date}")
+    #     await state.clear()
+    async def process_save_race(message: Message, state: FSMContext):
+        race_date = message.text.strip()
+        try:
+            date_obj = datetime.datetime.strptime(race_date, "%d.%m.%Y")
+            table_name = f"race_{date_obj.strftime('%d_%m_%Y')}"
+            conn = sqlite3.connect("/app/data/race_participants.db")
+            cursor = conn.cursor()
+            cursor.execute(
+                "SELECT name FROM sqlite_master WHERE type='table' AND name=?",
+                (table_name,),
+            )
+            table_exists = cursor.fetchone() is not None
+            conn.close()
+            success = save_race_to_db(race_date)
+            if success:
+                action = "обновлены" if table_exists else "сохранены"
+                await message.answer(
+                    messages["save_race_success"].format(date=race_date, action=action)
+                )
+                logger.info(f"Гонка {action} для даты {race_date}")
+            else:
+                await message.answer(messages["save_race_empty"])
+                logger.info(
+                    f"Не удалось сохранить гонку для даты {race_date}: таблица participants пуста"
+                )
+        except ValueError:
+            await message.answer(messages["save_race_invalid_format"])
+            logger.error(f"Некорректный формат даты для /save_race: {race_date}")
+        await state.clear()
+
+    async def clear_participants(event: [Message, CallbackQuery]):
+        user_id = event.from_user.id
+        if user_id != admin_id:
+            await event.answer(messages["clear_participants_access_denied"])
+            return
+        logger.info(f"Команда /clear_participants от user_id={user_id}")
+        if isinstance(event, CallbackQuery):
+            await event.message.delete()
+            message = event.message
+        else:
+            await event.delete()
+            message = event
+        success = clear_participants()
+        if success:
+            await message.answer(messages["clear_participants_success"])
+            logger.info("Таблица participants успешно очищена")
+        else:
+            await message.answer(messages["clear_participants_error"])
+            logger.error("Ошибка при очистке таблицы participants")
+        if isinstance(event, CallbackQuery):
+            await event.answer()
+
+    async def past_races(event: [Message, CallbackQuery], state: FSMContext):
+        user_id = event.from_user.id
+        if user_id != admin_id:
+            await event.answer(messages["past_races_access_denied"])
+            return
+        logger.info(f"Команда /past_races от user_id={user_id}")
+        if isinstance(event, CallbackQuery):
+            await event.message.delete()
+            message = event.message
+        else:
+            await event.delete()
+            message = event
+        races = get_past_races()
+        if not races:
+            await message.answer(messages["past_races_empty"])
+            if isinstance(event, CallbackQuery):
+                await event.answer()
+            return
+        keyboard = InlineKeyboardMarkup(
+            inline_keyboard=[
+                [InlineKeyboardButton(text=date, callback_data=f"past_race_{date}")]
+                for date in races
+            ]
+        )
+        await message.answer(messages["past_races_prompt"], reply_markup=keyboard)
+        if isinstance(event, CallbackQuery):
+            await event.answer()
+
+    async def show_past_race(callback_query: CallbackQuery):
+        race_date = callback_query.data.replace("past_race_", "")
+        logger.info(
+            f"Запрос данных гонки {race_date} от user_id={callback_query.from_user.id}"
+        )
+        await callback_query.message.delete()
+        participants = get_race_data(race_date)
+        if not participants:
+            await callback_query.message.answer(
+                messages["past_race_not_found"].format(date=race_date)
+            )
+            await callback_query.answer()
+            return
+        participant_list = messages["past_race_header"].format(date=race_date)
+        chunks = []
+        current_chunk = participant_list
+        last_role = None
+        for index, (
+            user_id,
+            username,
+            name,
+            target_time,
+            role,
+            reg_date,
+            payment_status,
+            bib_number,
+            result,
+        ) in enumerate(participants, 1):
+            if role != last_role and role == "volunteer":
+                if len(current_chunk) + len(messages["volunteers_header"]) > 4000:
+                    chunks.append(current_chunk)
+                    current_chunk = (
+                        messages["past_race_header"].format(date=race_date)
+                        + messages["volunteers_header"]
+                    )
+                else:
+                    current_chunk += messages["volunteers_header"]
+            last_role = role
+            date_obj = datetime.datetime.fromisoformat(reg_date.replace("Z", "+00:00"))
+            utc_timezone = pytz.timezone("UTC")
+            moscow_timezone = pytz.timezone("Europe/Moscow")
+            date_obj = date_obj.replace(tzinfo=utc_timezone).astimezone(moscow_timezone)
+            formatted_date = date_obj.strftime("%d.%m.%Y %H:%M")
+            bib_field = f"№{bib_number}" if bib_number is not None else "не присвоен"
+            result_field = result if result is not None else "не указан"
+            if role == "runner":
+                status_emoji = "✅" if payment_status == "paid" else "⏳"
+                participant_info = messages["participant_info"].format(
+                    index=index,
+                    user_id=user_id,
+                    name=name,
+                    target_time=target_time,
+                    role=role,
+                    date=formatted_date,
+                    status=status_emoji,
+                    username=username or "не указан",
+                    bib_number=bib_field,
+                    result=result_field,
+                )
+            else:
+                participant_info = messages["participant_info_volunteer"].format(
+                    index=index,
+                    user_id=user_id,
+                    name=name,
+                    date=formatted_date,
+                    username=username or "не указан",
+                )
+            if len(current_chunk) + len(participant_info) > 4000:
+                chunks.append(current_chunk)
+                current_chunk = messages["past_race_header"].format(date=race_date)
+                if role == "volunteer":
+                    current_chunk += messages["volunteers_header"]
+                else:
+                    current_chunk += messages["runners_header"]
+            current_chunk += participant_info
+        chunks.append(current_chunk)
+        for chunk in chunks:
+            await callback_query.message.answer(chunk)
+        await callback_query.answer()
+
+    @dp.message(Command("save_race"))
+    async def cmd_save_race(message: Message, state: FSMContext):
+        await save_race(message, state)
+
+    @dp.callback_query(F.data == "admin_save_race")
+    async def callback_save_race(callback_query: CallbackQuery, state: FSMContext):
+        await save_race(callback_query, state)
+
+    @dp.message(RegistrationForm.waiting_for_race_date)
+    async def process_save_race_message(message: Message, state: FSMContext):
+        await process_save_race(message, state)
+
+    @dp.message(Command("clear_participants"))
+    async def cmd_clear_participants(message: Message):
+        await clear_participants(message)
+
+    @dp.callback_query(F.data == "admin_clear_participants")
+    async def callback_clear_participants(callback_query: CallbackQuery):
+        await clear_participants(callback_query)
+
+    @dp.message(Command("past_races"))
+    async def cmd_past_races(message: Message, state: FSMContext):
+        await past_races(message, state)
+
+    @dp.callback_query(F.data == "admin_past_races")
+    async def callback_past_races(callback_query: CallbackQuery, state: FSMContext):
+        await past_races(callback_query, state)
+
+    @dp.callback_query(F.data.startswith("past_race_"))
+    async def callback_show_past_race(callback_query: CallbackQuery):
+        await show_past_race(callback_query)
