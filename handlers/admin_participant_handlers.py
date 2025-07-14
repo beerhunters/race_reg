@@ -95,6 +95,7 @@ def register_admin_participant_handlers(dp: Dispatcher, bot: Bot, admin_id: int)
                     status=status_emoji,
                     username=username or "не указан",
                     bib_number=bib_field,
+                    result=result or "не указан",
                 )
             else:
                 participant_info = messages["participant_info_volunteer"].format(
