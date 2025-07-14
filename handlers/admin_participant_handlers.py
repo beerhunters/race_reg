@@ -56,6 +56,7 @@ def register_admin_participant_handlers(dp: Dispatcher, bot: Bot, admin_id: int)
             reg_date,
             payment_status,
             bib_number,
+            result,
         ) in enumerate(participants, 1):
             if role != last_role and role == "volunteer":
                 if len(current_chunk) + len(messages["volunteers_header"]) > 4000:
@@ -543,6 +544,7 @@ def register_admin_participant_handlers(dp: Dispatcher, bot: Bot, admin_id: int)
                 "Статус оплаты",
                 "Username",
                 "Беговой номер",
+                "Результат",
             ]
         )
         for (
@@ -554,6 +556,7 @@ def register_admin_participant_handlers(dp: Dispatcher, bot: Bot, admin_id: int)
             reg_date,
             payment_status,
             bib_number,
+            result,
         ) in participants:
             writer.writerow(
                 [
@@ -564,6 +567,7 @@ def register_admin_participant_handlers(dp: Dispatcher, bot: Bot, admin_id: int)
                     payment_status,
                     username,
                     bib_number or "",
+                    result or "",
                 ]
             )
         csv_content = output.getvalue()
