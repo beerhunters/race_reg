@@ -51,6 +51,9 @@ def register_registration_handlers(dp: Dispatcher, bot: Bot, admin_id: int):
             ("notify_all", "📢 Уведомить всех"),
             ("notify_with_text", "✉️ Кастомное уведомление"),
             ("notify_unpaid", "💸 Уведомить неоплативших"),
+            ("save_race", "💾 Сохранить гонку"),
+            ("clear_participants", "🗑 Очистить участников"),
+            ("past_races", "📜 Прошедшие гонки"),
             ("notify_results", "🏅 Отправить результаты"),
             ("top_winners", "🏆 Тройка лучших"),
         ]
@@ -525,40 +528,40 @@ def register_registration_handlers(dp: Dispatcher, bot: Bot, admin_id: int):
                     f"Ошибка при отправке уведомления администратору (admin_id={admin_id}): {e}"
                 )
         elif callback_query.data == "decline_participation":
-            success = delete_pending_registration(callback_query.from_user.id)
-            if success:
-                pending_success = add_pending_registration(
-                    callback_query.from_user.id, username=username
-                )
-                if pending_success:
-                    logger.info(
-                        f"Пользователь user_id={callback_query.from_user.id} добавлен в pending_registrations"
-                    )
-                else:
-                    logger.warning(
-                        f"Не удалось добавить пользователя user_id={callback_query.from_user.id} в pending_registrations"
-                    )
-                await callback_query.message.answer(messages["decline_message"])
+            # success = delete_pending_registration(callback_query.from_user.id)
+            # if success:
+            #     pending_success = add_pending_registration(
+            #         callback_query.from_user.id, username=username
+            #     )
+            #     if pending_success:
+            #         logger.info(
+            #             f"Пользователь user_id={callback_query.from_user.id} добавлен в pending_registrations"
+            #         )
+            #     else:
+            #         logger.warning(
+            #             f"Не удалось добавить пользователя user_id={callback_query.from_user.id} в pending_registrations"
+            #         )
+            await callback_query.message.answer(messages["decline_message"])
+            logger.info(
+                f"Пользователь {name} (user_id={callback_query.from_user.id}) отказался от участия"
+            )
+            admin_message = messages["admin_decline_notification"].format(name=name)
+            try:
+                await bot.send_message(chat_id=admin_id, text=admin_message)
                 logger.info(
-                    f"Пользователь {name} (user_id={callback_query.from_user.id}) отказался от участия"
+                    f"Уведомление администратору (admin_id={admin_id}) отправлено"
                 )
-                admin_message = messages["admin_decline_notification"].format(name=name)
-                try:
-                    await bot.send_message(chat_id=admin_id, text=admin_message)
-                    logger.info(
-                        f"Уведомление администратору (admin_id={admin_id}) отправлено"
-                    )
-                except TelegramBadRequest as e:
-                    logger.error(
-                        f"Ошибка при отправке уведомления администратору (admin_id={admin_id}): {e}"
-                    )
-            else:
+            except TelegramBadRequest as e:
                 logger.error(
-                    f"Не удалось удалить пользователя user_id={callback_query.from_user.id} из participants"
+                    f"Ошибка при отправке уведомления администратору (admin_id={admin_id}): {e}"
                 )
-                await callback_query.message.answer(
-                    "Ошибка при обработке отказа. Попробуйте снова."
-                )
+            # else:
+            #     logger.error(
+            #         f"Не удалось удалить пользователя user_id={callback_query.from_user.id} из participants"
+            #     )
+            #     await callback_query.message.answer(
+            #         "Ошибка при обработке отказа. Попробуйте снова."
+            #     )
         try:
             await callback_query.message.delete()
             logger.info(

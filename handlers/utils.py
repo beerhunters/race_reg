@@ -97,6 +97,7 @@ class RegistrationForm(StatesGroup):
     waiting_for_remove_id = State()
     waiting_for_runners = State()
     waiting_for_result = State()
+    waiting_for_race_date = State()
     processed = State()
 
 
