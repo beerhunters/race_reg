@@ -3,13 +3,14 @@ from datetime import datetime
 from pytz import timezone
 
 from aiogram import Dispatcher, Bot, F
-from aiogram.filters import Command, CommandStart, StateFilter
+from aiogram.filters import CommandStart, StateFilter
 from aiogram.fsm.context import FSMContext
 from aiogram.types import (
     Message,
     FSInputFile,
     InlineKeyboardMarkup,
     InlineKeyboardButton,
+    CallbackQuery,
 )
 from aiogram.exceptions import TelegramBadRequest, TelegramForbiddenError
 from .utils import (
@@ -19,6 +20,7 @@ from .utils import (
     RegistrationForm,
     create_role_keyboard,
     create_register_keyboard,
+    create_gender_keyboard,
 )
 from database import (
     add_participant,
@@ -269,7 +271,7 @@ def register_registration_handlers(dp: Dispatcher, bot: Bot, admin_id: int):
             await callback_query.answer()
         else:
             success = add_participant(
-                callback_query.from_user.id, username, name, "", role
+                callback_query.from_user.id, username, name, "", role, ""
             )
             if success:
                 logger.info(
@@ -364,30 +366,49 @@ def register_registration_handlers(dp: Dispatcher, bot: Bot, admin_id: int):
     @dp.message(StateFilter(RegistrationForm.waiting_for_target_time))
     async def process_target_time(message: Message, state: FSMContext):
         target_time = message.text.strip()
-        logger.info(
-            f"Получено целевое время: {target_time} от user_id={message.from_user.id}"
+        if not target_time:
+            await message.answer(
+                "Целевое время не может быть пустым. Введите ваше целевое время:"
+            )
+            return
+        await state.update_data(target_time=target_time)
+        await message.answer(
+            messages["gender_prompt"], reply_markup=create_gender_keyboard()
         )
+        await state.set_state(RegistrationForm.waiting_for_gender)
+
+    @dp.callback_query(StateFilter(RegistrationForm.waiting_for_gender))
+    async def process_gender(callback_query: CallbackQuery, state: FSMContext):
+        gender = callback_query.data
+        await callback_query.message.delete()
+        user_id = callback_query.from_user.id
         user_data = await state.get_data()
         name = user_data.get("name")
         role = user_data.get("role")
-        username = message.from_user.username or "не указан"
+        target_time = user_data.get("target_time")
+        username = callback_query.from_user.username or "не указан"
         success = add_participant(
-            message.from_user.id, username, name, target_time, role
+            user_id,
+            username,
+            name,
+            target_time,
+            role,
+            gender,
         )
         if success:
             logger.info(
-                f"Успешная регистрация: {name}, {role}, user_id={message.from_user.id}"
+                f"Успешная регистрация: {name}, {role}, user_id={callback_query.from_user.id}"
             )
             time_field = f"Целевое время: {target_time}"
             extra_info = "💰 Ожидается оплата.\nПосле поступления оплаты вы получите подтверждение участия."
             user_message = messages["registration_success"].format(
                 name=name, time_field=time_field, extra_info=extra_info
             )
-            await message.answer(user_message)
+            await callback_query.message.answer(user_message)
             admin_message = messages["admin_notification"].format(
                 name=name,
                 time_field=time_field,
-                user_id=message.from_user.id,
+                user_id=callback_query.from_user.id,
                 username=username,
                 extra_info=extra_info,
             )
@@ -406,31 +427,33 @@ def register_registration_handlers(dp: Dispatcher, bot: Bot, admin_id: int):
                 )
                 if os.path.exists(image_path):
                     await bot.send_photo(
-                        chat_id=message.from_user.id,
+                        chat_id=callback_query.from_user.id,
                         photo=FSInputFile(image_path),
                         caption=messages["sponsor_message"],
                     )
                     logger.info(
-                        f"Сообщение со спонсорами отправлено пользователю user_id={message.from_user.id}"
+                        f"Сообщение со спонсорами отправлено пользователю user_id={callback_query.from_user.id}"
                     )
                 else:
                     logger.warning(
                         f"Файл {image_path} не найден, отправляется только текст спонсоров"
                     )
-                    await message.answer(messages["sponsor_message"])
+                    await callback_query.message.answer(messages["sponsor_message"])
             except TelegramForbiddenError:
                 logger.warning(
-                    f"Пользователь user_id={message.from_user.id} заблокировал бот"
+                    f"Пользователь user_id={callback_query.from_user.id} заблокировал бот"
                 )
-                delete_pending_registration(message.from_user.id)
+                delete_pending_registration(callback_query.from_user.id)
                 logger.info(
-                    f"Пользователь user_id={message.from_user.id} удалён из таблицы pending_registrations"
+                    f"Пользователь user_id={callback_query.from_user.id} удалён из таблицы pending_registrations"
                 )
                 try:
                     await bot.send_message(
                         chat_id=admin_id,
                         text=messages["admin_blocked_notification"].format(
-                            name=name, username=username, user_id=message.from_user.id
+                            name=name,
+                            username=username,
+                            user_id=callback_query.from_user.id,
                         ),
                     )
                     logger.info(
@@ -442,18 +465,22 @@ def register_registration_handlers(dp: Dispatcher, bot: Bot, admin_id: int):
                     )
             except TelegramBadRequest as e:
                 logger.error(
-                    f"Ошибка при отправке сообщения со спонсорами пользователю user_id={message.from_user.id}: {e}"
+                    f"Ошибка при отправке сообщения со спонсорами пользователю user_id={callback_query.from_user.id}: {e}"
                 )
-                await message.answer(messages["sponsor_message"])
+                await callback_query.answer(messages["sponsor_message"])
             logger.info(
                 f"Сообщения отправлены: пользователю и админу (admin_id={admin_id})"
             )
             participant_count = get_participant_count()
             logger.info(f"Всего участников: {participant_count}")
-            delete_pending_registration(message.from_user.id)
+            delete_pending_registration(callback_query.from_user.id)
         else:
-            logger.error(f"Ошибка регистрации для user_id={message.from_user.id}")
-            await message.answer("Ошибка при регистрации. Попробуйте снова.")
+            logger.error(
+                f"Ошибка регистрации для user_id={callback_query.from_user.id}"
+            )
+            await callback_query.message.answer(
+                "Ошибка при регистрации. Попробуйте снова."
+            )
         await state.clear()
 
     @dp.callback_query(F.data.in_(["confirm_participation", "decline_participation"]))
@@ -528,19 +555,6 @@ def register_registration_handlers(dp: Dispatcher, bot: Bot, admin_id: int):
                     f"Ошибка при отправке уведомления администратору (admin_id={admin_id}): {e}"
                 )
         elif callback_query.data == "decline_participation":
-            # success = delete_pending_registration(callback_query.from_user.id)
-            # if success:
-            #     pending_success = add_pending_registration(
-            #         callback_query.from_user.id, username=username
-            #     )
-            #     if pending_success:
-            #         logger.info(
-            #             f"Пользователь user_id={callback_query.from_user.id} добавлен в pending_registrations"
-            #         )
-            #     else:
-            #         logger.warning(
-            #             f"Не удалось добавить пользователя user_id={callback_query.from_user.id} в pending_registrations"
-            #         )
             await callback_query.message.answer(messages["decline_message"])
             logger.info(
                 f"Пользователь {name} (user_id={callback_query.from_user.id}) отказался от участия"
@@ -555,13 +569,6 @@ def register_registration_handlers(dp: Dispatcher, bot: Bot, admin_id: int):
                 logger.error(
                     f"Ошибка при отправке уведомления администратору (admin_id={admin_id}): {e}"
                 )
-            # else:
-            #     logger.error(
-            #         f"Не удалось удалить пользователя user_id={callback_query.from_user.id} из participants"
-            #     )
-            #     await callback_query.message.answer(
-            #         "Ошибка при обработке отказа. Попробуйте снова."
-            #     )
         try:
             await callback_query.message.delete()
             logger.info(
