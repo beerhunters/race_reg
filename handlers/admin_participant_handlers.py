@@ -101,11 +101,11 @@ def register_admin_participant_handlers(dp: Dispatcher, bot: Bot, admin_id: int)
                     index=index,
                     user_id=user_id,
                     name=name,
-                    target_time=target_time,
+                    # target_time=target_time,
                     role=role,
-                    date=formatted_date,
+                    # date=formatted_date,
                     username=username or "не указан",
-                    bib_number=bib_field,
+                    # bib_number=bib_field,
                 )
             if len(current_chunk) + len(participant_info) > 4000:
                 chunks.append(current_chunk)
