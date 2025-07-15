@@ -14,7 +14,14 @@ from aiogram.types import (
     InlineKeyboardButton,
 )
 from aiogram.fsm.context import FSMContext
-from .utils import logger, messages, config, RegistrationForm
+from .utils import (
+    logger,
+    messages,
+    config,
+    RegistrationForm,
+    create_gender_keyboard,
+    create_protocol_keyboard,
+)
 from database import (
     get_all_participants,
     get_pending_registrations,
@@ -805,56 +812,222 @@ def register_admin_participant_handlers(dp: Dispatcher, bot: Bot, admin_id: int)
     async def callback_show_past_race(callback_query: CallbackQuery):
         await show_past_race(callback_query)
 
-    async def show_female_runners(event: [Message, CallbackQuery]):
+    async def show_protocol(event: [Message, CallbackQuery], state: FSMContext):
         user_id = event.from_user.id
         if user_id != admin_id:
-            await event.answer(messages["top_winners_access_denied"])
+            await event.answer(messages["protocol_access_denied"])
             return
+        logger.info(f"Команда /protocol от user_id={user_id}")
         if isinstance(event, CallbackQuery):
             await event.message.delete()
             message = event.message
         else:
             await event.delete()
             message = event
+        await message.answer(
+            messages["protocol_prompt"], reply_markup=create_protocol_keyboard()
+        )
+        await state.set_state(RegistrationForm.waiting_for_protocol_type)
+        if isinstance(event, CallbackQuery):
+            await event.answer()
+
+    async def process_protocol_type(callback_query: CallbackQuery, state: FSMContext):
+        await callback_query.message.delete()
+        action = callback_query.data
+        await state.update_data(protocol_type=action)
+        if action == "protocol_all":
+            await show_full_protocol(callback_query)
+        elif action == "protocol_by_gender":
+            await callback_query.message.answer(
+                messages["gender_prompt"], reply_markup=create_gender_keyboard()
+            )
+            await state.set_state(RegistrationForm.waiting_for_gender_protocol)
+        elif action == "protocol_top_n":
+            await callback_query.message.answer(messages["top_n_prompt"])
+            await state.set_state(RegistrationForm.waiting_for_top_n)
+        await callback_query.answer()
+
+    async def show_full_protocol(event: [Message, CallbackQuery]):
         conn = sqlite3.connect("/app/data/race_participants.db")
         cursor = conn.cursor()
         cursor.execute(
-            "SELECT user_id, username, name, bib_number, result FROM participants WHERE gender = 'female' AND role = 'runner' AND result IS NOT NULL AND result != 'DNF'"
+            "SELECT user_id, username, name, bib_number, result FROM participants WHERE role = 'runner' AND result IS NOT NULL AND result != 'DNF'"
         )
         runners = cursor.fetchall()
         conn.close()
         if not runners:
-            await message.answer(messages["top_winners_empty"])
+            await event.message.answer(messages["top_winners_empty"])
             return
 
-        # Convert times to seconds for sorting
         def time_to_seconds(time_str):
             try:
                 parts = time_str.split(":")
                 if len(parts) == 3:
                     hours, minutes, seconds = map(int, parts)
                     return hours * 3600 + minutes * 60 + seconds
+                elif len(parts) == 2:
+                    minutes, seconds = map(int, parts)
+                    return minutes * 60 + seconds
                 return float("inf")
             except:
                 return float("inf")
 
         sorted_runners = sorted(runners, key=lambda x: time_to_seconds(x[4]))
-        top_winners = "Пивной Квартал 2025\nДевичий зачёт\n\n"
+        chunks = []
+        current_chunk = messages["protocol_all_header"]
         for place, (user_id, username, name, bib_number, result) in enumerate(
             sorted_runners, 1
         ):
             bib_field = f"{bib_number}" if bib_number is not None else "не присвоен"
-            top_winners += messages["top_winners_info"].format(
+            participant_info = messages["protocol_info"].format(
                 place=place,
                 name=name,
                 username=username or "не указан",
                 bib_number=bib_field,
                 result=result,
             )
-        await message.answer(top_winners)
-        if isinstance(event, CallbackQuery):
-            await event.answer()
+            if len(current_chunk) + len(participant_info) > 4000:
+                chunks.append(current_chunk)
+                current_chunk = messages["protocol_all_header"]
+            current_chunk += participant_info
+        chunks.append(current_chunk)
+        for chunk in chunks:
+            await event.message.answer(chunk)
 
-    @dp.message(Command("female_runners"))
-    async def cmd_female_runners(message: Message):
-        await show_female_runners(message)
+    async def process_gender_protocol(callback_query: CallbackQuery, state: FSMContext):
+        gender = callback_query.data
+        await callback_query.message.delete()
+        conn = sqlite3.connect("/app/data/race_participants.db")
+        cursor = conn.cursor()
+        cursor.execute(
+            "SELECT user_id, username, name, bib_number, result FROM participants WHERE gender = ? AND role = 'runner' AND result IS NOT NULL AND result != 'DNF'",
+            (gender,),
+        )
+        runners = cursor.fetchall()
+        conn.close()
+        if not runners:
+            await callback_query.message.answer(messages["top_winners_empty"])
+            return
+
+        def time_to_seconds(time_str):
+            try:
+                parts = time_str.split(":")
+                if len(parts) == 3:
+                    hours, minutes, seconds = map(int, parts)
+                    return hours * 3600 + minutes * 60 + seconds
+                elif len(parts) == 2:
+                    minutes, seconds = map(int, parts)
+                    return minutes * 60 + seconds
+                return float("inf")
+            except:
+                return float("inf")
+
+        sorted_runners = sorted(runners, key=lambda x: time_to_seconds(x[4]))
+        header = (
+            messages["protocol_male_header"]
+            if gender == "male"
+            else messages["protocol_female_header"]
+        )
+        chunks = []
+        current_chunk = header
+        for place, (user_id, username, name, bib_number, result) in enumerate(
+            sorted_runners, 1
+        ):
+            bib_field = f"{bib_number}" if bib_number is not None else "не присвоен"
+            participant_info = messages["protocol_info"].format(
+                place=place,
+                name=name,
+                username=username or "не указан",
+                bib_number=bib_field,
+                result=result,
+            )
+            if len(current_chunk) + len(participant_info) > 4000:
+                chunks.append(current_chunk)
+                current_chunk = header
+            current_chunk += participant_info
+        chunks.append(current_chunk)
+        for chunk in chunks:
+            await callback_query.message.answer(chunk)
+        await state.clear()
+        await callback_query.answer()
+
+    async def process_top_n(message: Message, state: FSMContext):
+        try:
+            n = int(message.text.strip())
+            if n not in [3, 5, 10]:
+                await message.answer(messages["top_n_invalid"])
+                return
+        except ValueError:
+            await message.answer(messages["top_n_invalid"])
+            return
+        conn = sqlite3.connect("/app/data/race_participants.db")
+        cursor = conn.cursor()
+        cursor.execute(
+            "SELECT user_id, username, name, bib_number, result FROM participants WHERE role = 'runner' AND result IS NOT NULL AND result != 'DNF'"
+        )
+        runners = cursor.fetchall()
+        conn.close()
+        if not runners:
+            await message.answer(messages["top_winners_empty"])
+            await state.clear()
+            return
+
+        def time_to_seconds(time_str):
+            try:
+                parts = time_str.split(":")
+                if len(parts) == 3:
+                    hours, minutes, seconds = map(int, parts)
+                    return hours * 3600 + minutes * 60 + seconds
+                elif len(parts) == 2:
+                    minutes, seconds = map(int, parts)
+                    return minutes * 60 + seconds
+                return float("inf")
+            except:
+                return float("inf")
+
+        sorted_runners = sorted(runners, key=lambda x: time_to_seconds(x[4]))[:n]
+        chunks = []
+        current_chunk = messages["protocol_top_n_header"].format(n=n)
+        for place, (user_id, username, name, bib_number, result) in enumerate(
+            sorted_runners, 1
+        ):
+            bib_field = f"{bib_number}" if bib_number is not None else "не присвоен"
+            participant_info = messages["protocol_info"].format(
+                place=place,
+                name=name,
+                username=username or "не указан",
+                bib_number=bib_field,
+                result=result,
+            )
+            if len(current_chunk) + len(participant_info) > 4000:
+                chunks.append(current_chunk)
+                current_chunk = messages["protocol_top_n_header"].format(n=n)
+            current_chunk += participant_info
+        chunks.append(current_chunk)
+        for chunk in chunks:
+            await message.answer(chunk)
+        await state.clear()
+
+    @dp.message(Command("protocol"))
+    async def cmd_protocol(message: Message, state: FSMContext):
+        await show_protocol(message, state)
+
+    @dp.callback_query(F.data == "admin_protocol")
+    async def callback_protocol(callback_query: CallbackQuery, state: FSMContext):
+        await show_protocol(callback_query, state)
+
+    @dp.callback_query(RegistrationForm.waiting_for_protocol_type)
+    async def callback_process_protocol_type(
+        callback_query: CallbackQuery, state: FSMContext
+    ):
+        await process_protocol_type(callback_query, state)
+
+    @dp.callback_query(RegistrationForm.waiting_for_gender_protocol)
+    async def callback_process_gender_protocol(
+        callback_query: CallbackQuery, state: FSMContext
+    ):
+        await process_gender_protocol(callback_query, state)
+
+    @dp.message(RegistrationForm.waiting_for_top_n)
+    async def process_top_n_message(message: Message, state: FSMContext):
+        await process_top_n(message, state)
