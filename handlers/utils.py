@@ -97,6 +97,9 @@ class RegistrationForm(StatesGroup):
     waiting_for_runners = State()
     waiting_for_result = State()
     waiting_for_race_date = State()
+    waiting_for_protocol_type = State()
+    waiting_for_gender_protocol = State()
+    waiting_for_top_n = State()
     processed = State()
 
 
@@ -161,6 +164,29 @@ def create_gender_keyboard():
                 ),
             ],
             [InlineKeyboardButton(text="🏠 Главное меню", callback_data="main_menu")],
+        ]
+    )
+    return keyboard
+
+
+def create_protocol_keyboard():
+    keyboard = InlineKeyboardMarkup(
+        inline_keyboard=[
+            [
+                InlineKeyboardButton(
+                    text=messages["protocol_all_button"], callback_data="protocol_all"
+                ),
+                InlineKeyboardButton(
+                    text=messages["protocol_by_gender_button"],
+                    callback_data="protocol_by_gender",
+                ),
+            ],
+            [
+                InlineKeyboardButton(
+                    text=messages["protocol_top_n_button"],
+                    callback_data="protocol_top_n",
+                ),
+            ],
         ]
     )
     return keyboard

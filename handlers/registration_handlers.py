@@ -1,4 +1,5 @@
 import os
+import re
 from datetime import datetime
 from pytz import timezone
 
@@ -57,7 +58,8 @@ def register_registration_handlers(dp: Dispatcher, bot: Bot, admin_id: int):
             ("clear_participants", "🗑 Очистить участников"),
             ("past_races", "📜 Прошедшие гонки"),
             ("notify_results", "🏅 Отправить результаты"),
-            ("top_winners", "🏆 Тройка лучших"),
+            # ("top_winners", "🏆 Тройка лучших"),
+            ("protocol", "📝 Протокол"),
         ]
         keyboard_buttons = []
         # Группируем по 2 кнопки
@@ -363,12 +365,31 @@ def register_registration_handlers(dp: Dispatcher, bot: Bot, admin_id: int):
             await callback_query.answer()
             await state.clear()
 
+    # @dp.message(StateFilter(RegistrationForm.waiting_for_target_time))
+    # async def process_target_time(message: Message, state: FSMContext):
+    #     target_time = message.text.strip()
+    #     if not target_time:
+    #         await message.answer(
+    #             "Целевое время не может быть пустым. Введите ваше целевое время:"
+    #         )
+    #         return
+    #     await state.update_data(target_time=target_time)
+    #     await message.answer(
+    #         messages["gender_prompt"], reply_markup=create_gender_keyboard()
+    #     )
+    #     await state.set_state(RegistrationForm.waiting_for_gender)
     @dp.message(StateFilter(RegistrationForm.waiting_for_target_time))
     async def process_target_time(message: Message, state: FSMContext):
         target_time = message.text.strip()
         if not target_time:
             await message.answer(
-                "Целевое время не может быть пустым. Введите ваше целевое время:"
+                "Целевое время не может быть пустым. Введите ваше целевое время прохождения трасс(например, '5:30' или '1:05:30'):"
+            )
+            return
+        time_pattern = re.compile(r"^(?:\d{1,2}:)?[0-5]?\d:[0-5]\d$")
+        if not time_pattern.match(target_time):
+            await message.answer(
+                "Некорректный формат времени. Введите время в формате 'M:SS' или 'H:MM:SS' (например, '5:30' или '1:05:30'):"
             )
             return
         await state.update_data(target_time=target_time)
