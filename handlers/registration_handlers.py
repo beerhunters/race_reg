@@ -35,9 +35,7 @@ from database import (
 
 
 def register_registration_handlers(dp: Dispatcher, bot: Bot, admin_id: int):
-
     def create_admin_commands_keyboard():
-        """Создаёт инлайн-клавиатуру с командами администратора."""
         commands = [
             ("participants", "📋 Список участников"),
             ("pending", "⏳ Незавершённые регистрации"),
@@ -58,23 +56,130 @@ def register_registration_handlers(dp: Dispatcher, bot: Bot, admin_id: int):
             ("clear_participants", "🗑 Очистить участников"),
             ("past_races", "📜 Прошедшие гонки"),
             ("notify_results", "🏅 Отправить результаты"),
-            # ("top_winners", "🏆 Тройка лучших"),
+            ("top_winners", "🏆 Тройка лучших"),
             ("protocol", "📝 Протокол"),
+            ("main_menu", "🏠 Главное меню"),
         ]
-        keyboard_buttons = []
-        # Группируем по 2 кнопки
-        for i in range(0, len(commands), 2):
-            row = []
-            for j in range(2):
-                if i + j < len(commands):
-                    cmd, name = commands[i + j]
-                    row.append(
-                        InlineKeyboardButton(text=name, callback_data=f"admin_{cmd}")
-                    )
-            keyboard_buttons.append(row)
+        keyboard_buttons = [
+            [
+                InlineKeyboardButton(
+                    text="Управление участниками", callback_data="category_participants"
+                )
+            ],
+            [
+                InlineKeyboardButton(
+                    text="Управление гонкой", callback_data="category_race"
+                )
+            ],
+            [
+                InlineKeyboardButton(
+                    text="Уведомления и результаты",
+                    callback_data="category_notifications",
+                )
+            ],
+        ]
+        return InlineKeyboardMarkup(inline_keyboard=keyboard_buttons)
 
-        keyboard = InlineKeyboardMarkup(inline_keyboard=keyboard_buttons)
-        return keyboard
+    def create_participants_category_keyboard():
+        keyboard_buttons = [
+            [
+                InlineKeyboardButton(
+                    text="📋 Список участников", callback_data="admin_participants"
+                ),
+                InlineKeyboardButton(
+                    text="⏳ Незавершённые регистрации", callback_data="admin_pending"
+                ),
+            ],
+            [
+                InlineKeyboardButton(text="📊 Статистика", callback_data="admin_stats"),
+                InlineKeyboardButton(
+                    text="💳 Подтвердить оплату", callback_data="admin_paid"
+                ),
+            ],
+            [
+                InlineKeyboardButton(
+                    text="🏷 Присвоить номер", callback_data="admin_set_bib"
+                ),
+                InlineKeyboardButton(
+                    text="🗑 Удалить участника", callback_data="admin_remove"
+                ),
+            ],
+            [
+                InlineKeyboardButton(
+                    text="📤 Экспорт данных", callback_data="admin_export"
+                ),
+                InlineKeyboardButton(text="🏠 Главное меню", callback_data="main_menu"),
+            ],
+        ]
+        return InlineKeyboardMarkup(inline_keyboard=keyboard_buttons)
+
+    def create_race_category_keyboard():
+        keyboard_buttons = [
+            [
+                InlineKeyboardButton(
+                    text="ℹ️ Информация о забеге", callback_data="admin_info"
+                ),
+                InlineKeyboardButton(
+                    text="🖼 Обновить афишу", callback_data="admin_create_afisha"
+                ),
+            ],
+            [
+                InlineKeyboardButton(
+                    text="🎯 Обновить спонсора", callback_data="admin_update_sponsor"
+                ),
+                InlineKeyboardButton(
+                    text="🏃 Изменить лимит", callback_data="admin_edit_runners"
+                ),
+            ],
+            [
+                InlineKeyboardButton(
+                    text="⏰ Установить дату", callback_data="admin_set_reg_end_date"
+                ),
+                InlineKeyboardButton(
+                    text="💾 Сохранить гонку", callback_data="admin_save_race"
+                ),
+            ],
+            [
+                InlineKeyboardButton(
+                    text="🗑 Очистить участников",
+                    callback_data="admin_clear_participants",
+                ),
+                InlineKeyboardButton(
+                    text="📜 Прошедшие гонки", callback_data="admin_past_races"
+                ),
+            ],
+            [InlineKeyboardButton(text="🏠 Главное меню", callback_data="main_menu")],
+        ]
+        return InlineKeyboardMarkup(inline_keyboard=keyboard_buttons)
+
+    def create_notifications_category_keyboard():
+        keyboard_buttons = [
+            [
+                InlineKeyboardButton(
+                    text="📢 Уведомить всех", callback_data="admin_notify_all"
+                ),
+                InlineKeyboardButton(
+                    text="✉️ Кастомное уведомление",
+                    callback_data="admin_notify_with_text",
+                ),
+            ],
+            [
+                InlineKeyboardButton(
+                    text="💸 Уведомить неоплативших",
+                    callback_data="admin_notify_unpaid",
+                ),
+                InlineKeyboardButton(
+                    text="🏅 Отправить результаты", callback_data="admin_notify_results"
+                ),
+            ],
+            [
+                InlineKeyboardButton(
+                    text="📝 Протокол", callback_data="admin_protocol"
+                ),
+                InlineKeyboardButton(text="🏠 Главное меню", callback_data="main_menu"),
+            ],
+        ]
+        return InlineKeyboardMarkup(inline_keyboard=keyboard_buttons)
 
     logger.info("Регистрация обработчиков регистрации")
 
@@ -365,19 +470,6 @@ def register_registration_handlers(dp: Dispatcher, bot: Bot, admin_id: int):
             await callback_query.answer()
             await state.clear()
 
-    # @dp.message(StateFilter(RegistrationForm.waiting_for_target_time))
-    # async def process_target_time(message: Message, state: FSMContext):
-    #     target_time = message.text.strip()
-    #     if not target_time:
-    #         await message.answer(
-    #             "Целевое время не может быть пустым. Введите ваше целевое время:"
-    #         )
-    #         return
-    #     await state.update_data(target_time=target_time)
-    #     await message.answer(
-    #         messages["gender_prompt"], reply_markup=create_gender_keyboard()
-    #     )
-    #     await state.set_state(RegistrationForm.waiting_for_gender)
     @dp.message(StateFilter(RegistrationForm.waiting_for_target_time))
     async def process_target_time(message: Message, state: FSMContext):
         target_time = message.text.strip()
@@ -601,3 +693,37 @@ def register_registration_handlers(dp: Dispatcher, bot: Bot, admin_id: int):
             )
         await callback_query.answer()
         await state.clear()
+
+    @dp.callback_query(F.data == "category_participants")
+    async def show_participants_category(callback_query: CallbackQuery):
+        await callback_query.message.delete()
+        await callback_query.message.answer(
+            "Управление участниками:",
+            reply_markup=create_participants_category_keyboard(),
+        )
+        await callback_query.answer()
+
+    @dp.callback_query(F.data == "category_race")
+    async def show_race_category(callback_query: CallbackQuery):
+        await callback_query.message.delete()
+        await callback_query.message.answer(
+            "Управление гонкой:", reply_markup=create_race_category_keyboard()
+        )
+        await callback_query.answer()
+
+    @dp.callback_query(F.data == "category_notifications")
+    async def show_notifications_category(callback_query: CallbackQuery):
+        await callback_query.message.delete()
+        await callback_query.message.answer(
+            "Уведомления и результаты:",
+            reply_markup=create_notifications_category_keyboard(),
+        )
+        await callback_query.answer()
+
+    @dp.callback_query(F.data == "main_menu")
+    async def show_main_menu(callback_query: CallbackQuery):
+        await callback_query.message.delete()
+        await callback_query.message.answer(
+            messages["admin_commands"], reply_markup=create_admin_commands_keyboard()
+        )
+        await callback_query.answer()
