@@ -100,6 +100,8 @@ class RegistrationForm(StatesGroup):
     waiting_for_protocol_type = State()
     waiting_for_gender_protocol = State()
     waiting_for_top_n = State()
+    waiting_for_notify_all_interacted_message = State()
+    waiting_for_notify_all_interacted_photo = State()
     processed = State()
 
 

@@ -4,7 +4,7 @@ import os
 from aiogram import Dispatcher, Bot, F
 from aiogram.filters import Command, StateFilter
 from aiogram.fsm.context import FSMContext
-from aiogram.types import Message, FSInputFile, CallbackQuery
+from aiogram.types import Message, FSInputFile, CallbackQuery, InputMediaPhoto
 from aiogram.exceptions import TelegramBadRequest, TelegramForbiddenError
 from .utils import (
     logger,
@@ -479,3 +479,166 @@ def register_notification_handlers(dp: Dispatcher, bot: Bot, admin_id: int):
                 )
         except ValueError:
             await message.answer(messages["notify_results_usage"])
+
+    async def notify_all_interacted(event: [Message, CallbackQuery], state: FSMContext):
+        user_id = event.from_user.id
+        if user_id != admin_id:
+            await event.answer(messages["notify_all_interacted_access_denied"])
+            return
+        logger.info(f"Команда /notify_all_interacted от user_id={user_id}")
+        if isinstance(event, CallbackQuery):
+            await event.message.delete()
+            message = event.message
+        else:
+            await event.delete()
+            message = event
+        await message.answer(messages["notify_all_interacted_prompt"])
+        await state.set_state(
+            RegistrationForm.waiting_for_notify_all_interacted_message
+        )
+        if isinstance(event, CallbackQuery):
+            await event.answer()
+
+    async def process_notify_all_interacted_message(
+        message: Message, state: FSMContext
+    ):
+        notify_text = message.text.strip()
+        await state.update_data(notify_text=notify_text, photos=[])
+        await message.answer(messages["notify_all_interacted_photo_prompt"])
+        await state.set_state(RegistrationForm.waiting_for_notify_all_interacted_photo)
+
+    async def process_notify_all_interacted_photo(message: Message, state: FSMContext):
+        user_data = await state.get_data()
+        photos = user_data.get("photos", [])
+        if len(photos) >= 10:
+            await message.answer(messages["notify_all_interacted_photo_limit"])
+            return
+        photo = message.photo[-1]
+        file = await bot.get_file(photo.file_id)
+        file_path = file.file_path
+        temp_photo_path = (
+            f"/app/images/temp_notify_all_interacted_photo_{len(photos)}.jpeg"
+        )
+        await bot.download_file(file_path, temp_photo_path)
+        photos.append(temp_photo_path)
+        await state.update_data(photos=photos)
+        await message.answer(
+            messages["notify_all_interacted_photo_added"].format(count=len(photos))
+        )
+        if len(photos) < 10:
+            await message.answer(messages["notify_all_interacted_photo_prompt"])
+        else:
+            await send_all_interacted_notifications(message, state)
+
+    async def process_notify_all_interacted_skip_photo(
+        message: Message, state: FSMContext
+    ):
+        await send_all_interacted_notifications(message, state)
+
+    async def send_all_interacted_notifications(message: Message, state: FSMContext):
+        user_data = await state.get_data()
+        notify_text = user_data.get("notify_text")
+        photos = user_data.get("photos", [])
+        conn = sqlite3.connect("/app/data/race_participants.db")
+        cursor = conn.cursor()
+        cursor.execute("SELECT user_id, username, name FROM participants")
+        participants = cursor.fetchall()
+        cursor.execute("SELECT user_id, username, name FROM pending_registrations")
+        pending = cursor.fetchall()
+        conn.close()
+        all_users = list(
+            set(
+                [(p[0], p[1], p[2]) for p in participants]
+                + [(p[0], p[1], p[2]) for p in pending]
+            )
+        )
+        if not all_users:
+            await message.answer(messages["notify_all_interacted_no_users"])
+            await state.clear()
+            return
+        success_count = 0
+        for user_id, username, name in all_users:
+            username = username or "не указан"
+            name = name or "неизвестно"
+            try:
+                if photos:
+                    media = [
+                        InputMediaPhoto(
+                            media=FSInputFile(photos[0]), caption=notify_text
+                        )
+                    ]
+                    for photo_path in photos[1:]:
+                        media.append(InputMediaPhoto(media=FSInputFile(photo_path)))
+                    await bot.send_media_group(chat_id=user_id, media=media)
+                else:
+                    await bot.send_message(chat_id=user_id, text=notify_text)
+                success_count += 1
+                logger.info(f"Уведомление отправлено user_id={user_id}")
+            except Exception as e:
+                if "blocked by user" in str(e).lower():
+                    delete_participant(user_id)
+                    delete_pending_registration(user_id)
+                    await message.answer(
+                        messages["admin_blocked_notification"].format(
+                            name=name, username=username, user_id=user_id
+                        )
+                    )
+                    logger.info(
+                        f"Пользователь user_id={user_id} удалён из баз данных, так как заблокировал бота"
+                    )
+                else:
+                    logger.error(f"Ошибка отправки уведомления user_id={user_id}: {e}")
+                    await message.answer(
+                        f"🚫 Не удалось отправить уведомление пользователю {name} (ID: <code>{user_id}</code>, @{username})"
+                    )
+        for photo_path in photos:
+            if os.path.exists(photo_path):
+                os.remove(photo_path)
+        await message.answer(
+            messages["notify_all_interacted_success"].format(count=success_count)
+        )
+        await state.clear()
+
+    async def process_notify_all_interacted_invalid(
+        message: Message, state: FSMContext
+    ):
+        await message.answer(messages["notify_all_interacted_photo_prompt"])
+
+    @dp.message(Command("notify_all_interacted"))
+    async def cmd_notify_all_interacted(message: Message, state: FSMContext):
+        await notify_all_interacted(message, state)
+
+    @dp.callback_query(F.data == "admin_notify_all_interacted")
+    async def callback_notify_all_interacted(
+        callback_query: CallbackQuery, state: FSMContext
+    ):
+        await notify_all_interacted(callback_query, state)
+
+    @dp.message(StateFilter(RegistrationForm.waiting_for_notify_all_interacted_message))
+    async def process_notify_all_interacted_message_handler(
+        message: Message, state: FSMContext
+    ):
+        await process_notify_all_interacted_message(message, state)
+
+    @dp.message(
+        StateFilter(RegistrationForm.waiting_for_notify_all_interacted_photo), F.photo
+    )
+    async def process_notify_all_interacted_photo_handler(
+        message: Message, state: FSMContext
+    ):
+        await process_notify_all_interacted_photo(message, state)
+
+    @dp.message(
+        StateFilter(RegistrationForm.waiting_for_notify_all_interacted_photo),
+        Command("skip"),
+    )
+    async def process_notify_all_interacted_skip_photo_handler(
+        message: Message, state: FSMContext
+    ):
+        await process_notify_all_interacted_skip_photo(message, state)
+
+    @dp.message(StateFilter(RegistrationForm.waiting_for_notify_all_interacted_photo))
+    async def process_notify_all_interacted_invalid_handler(
+        message: Message, state: FSMContext
+    ):
+        await process_notify_all_interacted_invalid(message, state)
