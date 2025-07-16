@@ -221,7 +221,10 @@ def register_admin_participant_handlers(dp: Dispatcher, bot: Bot, admin_id: int)
                 volunteer_count = cursor.fetchone()[0]
                 cursor.execute("SELECT COUNT(*) FROM pending_registrations")
                 pending_reg_count = cursor.fetchone()[0]
+                cursor.execute("SELECT value FROM settings WHERE key = 'max_runners'")
+                max_runners = cursor.fetchone()[0]
             stats_message = messages["stats_message"].format(
+                max_runners=max_runners,
                 paid=paid_count,
                 runners=runner_count,
                 volunteers=volunteer_count,
@@ -792,7 +795,7 @@ def register_admin_participant_handlers(dp: Dispatcher, bot: Bot, admin_id: int)
         conn = sqlite3.connect("/app/data/race_participants.db")
         cursor = conn.cursor()
         cursor.execute(
-            "SELECT user_id, username, name, bib_number, result FROM participants WHERE role = 'runner' AND result IS NOT NULL AND result != 'DNF'"
+            "SELECT user_id, username, name, bib_number, result FROM participants WHERE role = 'runner' AND result IS NOT NULL"
         )
         runners = cursor.fetchall()
         conn.close()
@@ -841,7 +844,7 @@ def register_admin_participant_handlers(dp: Dispatcher, bot: Bot, admin_id: int)
         conn = sqlite3.connect("/app/data/race_participants.db")
         cursor = conn.cursor()
         cursor.execute(
-            "SELECT user_id, username, name, bib_number, result FROM participants WHERE gender = ? AND role = 'runner' AND result IS NOT NULL AND result != 'DNF'",
+            "SELECT user_id, username, name, bib_number, result FROM participants WHERE gender = ? AND role = 'runner' AND result IS NOT NULL",
             (gender,),
         )
         runners = cursor.fetchall()
