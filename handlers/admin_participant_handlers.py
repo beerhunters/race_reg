@@ -223,8 +223,11 @@ def register_admin_participant_handlers(dp: Dispatcher, bot: Bot, admin_id: int)
                 pending_reg_count = cursor.fetchone()[0]
                 cursor.execute("SELECT value FROM settings WHERE key = 'max_runners'")
                 max_runners = cursor.fetchone()[0]
+                cursor.execute("SELECT value FROM settings WHERE key = 'reg_end_date'")
+                reg_end_date = cursor.fetchone()[0]
             stats_message = messages["stats_message"].format(
                 max_runners=max_runners,
+                reg_end_date=reg_end_date,
                 paid=paid_count,
                 runners=runner_count,
                 volunteers=volunteer_count,
