@@ -1,18 +1,19 @@
 import os
 import re
+import sqlite3
 from datetime import datetime
-from pytz import timezone
 
+from pytz import timezone
 from aiogram import Dispatcher, Bot, F
 from aiogram.filters import CommandStart, StateFilter
-from aiogram.fsm.context import FSMContext
 from aiogram.types import (
     Message,
-    FSInputFile,
+    CallbackQuery,
     InlineKeyboardMarkup,
     InlineKeyboardButton,
-    CallbackQuery,
+    FSInputFile,
 )
+from aiogram.fsm.context import FSMContext
 from aiogram.exceptions import TelegramBadRequest, TelegramForbiddenError
 from .utils import (
     logger,
@@ -24,13 +25,15 @@ from .utils import (
     create_gender_keyboard,
 )
 from database import (
-    add_participant,
     get_participant_by_user_id,
     add_pending_registration,
-    delete_pending_registration,
-    get_setting,
-    get_participant_count_by_role,
+    add_participant,
     get_participant_count,
+    get_participant_count_by_role,
+    get_setting,
+    get_past_races,
+    delete_pending_registration,
+    delete_participant,
 )
 
 
@@ -47,8 +50,8 @@ def register_registration_handlers(dp: Dispatcher, bot: Bot, admin_id: int):
                 text="📢 Уведомления", callback_data="category_notifications"
             ),
         ]
-        keyboard_buttons = [commands]
-        return InlineKeyboardMarkup(inline_keyboard=keyboard_buttons)
+        # return InlineKeyboardMarkup(inline_keyboard=[commands])
+        return InlineKeyboardMarkup(inline_keyboard=[[cmd] for cmd in commands])
 
     def create_participants_category_keyboard():
         commands = [
@@ -67,8 +70,7 @@ def register_registration_handlers(dp: Dispatcher, bot: Bot, admin_id: int):
             InlineKeyboardButton(text="Экспорт в CSV", callback_data="admin_export"),
             InlineKeyboardButton(text="🏠 Главное меню", callback_data="main_menu"),
         ]
-        keyboard_buttons = [[cmd] for cmd in commands]
-        return InlineKeyboardMarkup(inline_keyboard=keyboard_buttons)
+        return InlineKeyboardMarkup(inline_keyboard=[[cmd] for cmd in commands])
 
     def create_race_category_keyboard():
         commands = [
@@ -106,8 +108,7 @@ def register_registration_handlers(dp: Dispatcher, bot: Bot, admin_id: int):
             ),
             InlineKeyboardButton(text="🏠 Главное меню", callback_data="main_menu"),
         ]
-        keyboard_buttons = [[cmd] for cmd in commands]
-        return InlineKeyboardMarkup(inline_keyboard=keyboard_buttons)
+        return InlineKeyboardMarkup(inline_keyboard=[[cmd] for cmd in commands])
 
     def create_notifications_category_keyboard():
         commands = [
@@ -129,18 +130,17 @@ def register_registration_handlers(dp: Dispatcher, bot: Bot, admin_id: int):
             ),
             InlineKeyboardButton(text="🏠 Главное меню", callback_data="main_menu"),
         ]
-        keyboard_buttons = [[cmd] for cmd in commands]
-        return InlineKeyboardMarkup(inline_keyboard=keyboard_buttons)
-
-    logger.info("Регистрация обработчиков регистрации")
+        return InlineKeyboardMarkup(inline_keyboard=[[cmd] for cmd in commands])
 
     @dp.message(CommandStart())
     async def cmd_start(message: Message, state: FSMContext):
-        logger.info(f"Команда /start от user_id={message.from_user.id}")
-        if message.from_user.id == admin_id:
-            logger.info(
-                f"Пользователь user_id={message.from_user.id} является администратором"
-            )
+        user_id = message.from_user.id
+        logger.info(f"Команда /start от user_id={user_id}")
+        await message.delete()
+
+        # Проверка, является ли пользователь администратором
+        if user_id == admin_id:
+            logger.info(f"Пользователь user_id={user_id} является администратором")
             try:
                 await message.answer(
                     messages["admin_commands"],
@@ -151,77 +151,102 @@ def register_registration_handlers(dp: Dispatcher, bot: Bot, admin_id: int):
                     f"Ошибка TelegramBadRequest при отправке admin_commands: {e}"
                 )
                 await message.answer(messages["admin_commands"], parse_mode=None)
-                logger.info(
-                    f"admin_commands отправлено без parse_mode пользователю user_id={message.from_user.id}"
-                )
             await state.clear()
             return
-        participant = get_participant_by_user_id(message.from_user.id)
+
+        # Проверка текущей регистрации
+        participant = get_participant_by_user_id(user_id)
+        past_races = get_past_races()
+        past_result = None
+        past_race_date = None
+        is_in_past_race = False
+
+        # Проверка, есть ли пользователь в таблицах race_*
+        if past_races:
+            conn = sqlite3.connect("/app/data/race_participants.db")
+            cursor = conn.cursor()
+            for race_date in past_races:
+                table_name = f"race_{race_date.replace('.', '_')}"
+                cursor.execute(
+                    f"SELECT result FROM {table_name} WHERE user_id = ? AND role = 'runner'",
+                    (user_id,),
+                )
+                result = cursor.fetchone()
+                if result:
+                    is_in_past_race = True
+                    if result[0]:
+                        past_result = result[0]
+                        past_race_date = race_date
+                        break
+            conn.close()
+
+        # Проверка регистрации в текущей гонке
         if participant:
-            logger.info(
-                f"Пользователь user_id={message.from_user.id} уже зарегистрирован"
-            )
             name = participant[2]
             target_time = participant[3]
-            role = participant[4]
+            role = "бегун" if participant[4] == "runner" else "волонтёр"
             bib_number = participant[7] if participant[7] is not None else "не присвоен"
             time_field = (
-                f"Целевое время: {target_time}" if role == "runner" else "Вы волонтер"
+                f"Целевое время: {target_time}"
+                if target_time and role == "бегун"
+                else "💪🏼 Вы волонтёр"
             )
+            extra_info = (
+                "Вы участник Актуальной гонки\n\n"
+                if get_participant_count() > 0
+                else ""
+            )
+            if past_result and past_race_date:
+                extra_info += f"Ваше время на гонке {past_race_date}: {past_result}\n"
+            # Если пользователь в participants и race_*, кнопка регистрации не отображается
+            reply_markup = None if is_in_past_race else create_register_keyboard()
             await message.answer(
                 messages["already_registered"].format(
                     name=name, time_field=time_field, role=role, bib_number=bib_number
                 )
+                + f"\n{extra_info}",
+                reply_markup=reply_markup,
             )
             await state.clear()
             return
+
+        # Проверка, был ли пользователь в прошлых гонках, если текущая гонка не активна
+        if (
+            not participant
+            and past_result
+            and past_race_date
+            and get_participant_count() == 0
+        ):
+            name = message.from_user.full_name or "неизвестно"
+            role = "бегун"
+            await message.answer(
+                messages["already_registered"].format(
+                    name=name,
+                    time_field=f"Ваше время на гонке {past_race_date}: {past_result}",
+                    role=role,
+                    bib_number="не присвоен",
+                )
+                + f"\nВы участник гонки {past_race_date}\n",
+                reply_markup=create_register_keyboard(),
+            )
+            await state.clear()
+            return
+
+        # Если пользователь новый, добавляем в pending_registrations
         success = add_pending_registration(
-            message.from_user.id, username=message.from_user.username
+            user_id=user_id,
+            username=message.from_user.username,
+            name=message.from_user.full_name,
         )
         if not success:
             logger.error(
-                f"Ошибка при сохранении user_id={message.from_user.id} в pending_registrations"
+                f"Ошибка добавления в pending_registrations для user_id={user_id}"
             )
-            await message.answer("Ошибка при начале регистрации. Попробуйте снова.")
+            await message.answer(messages["invalid_command"])
             await state.clear()
             return
-        afisha_path = "/app/images/afisha.jpeg"
-        try:
-            if os.path.exists(afisha_path):
-                await bot.send_photo(
-                    chat_id=message.from_user.id,
-                    photo=FSInputFile(afisha_path),
-                    caption=messages["start_message"],
-                    reply_markup=create_register_keyboard(),
-                    parse_mode="HTML",
-                )
-                logger.info(
-                    f"Афиша отправлена с текстом start_message и кнопкой регистрации пользователю user_id={message.from_user.id}"
-                )
-            else:
-                await message.answer(
-                    messages["start_message"],
-                    reply_markup=create_register_keyboard(),
-                    parse_mode="HTML",
-                )
-                logger.info(
-                    f"Афиша не найдена, отправлен текст start_message с кнопкой регистрации пользователю user_id={message.from_user.id}"
-                )
-        except TelegramBadRequest as e:
-            logger.error(
-                f"Ошибка при отправке сообщения /start пользователю user_id={message.from_user.id}: {e}"
-            )
-            await message.answer(
-                messages["start_message"],
-                reply_markup=create_register_keyboard(),
-                parse_mode="HTML",
-            )
 
-    @dp.callback_query(F.data == "start_registration")
-    async def process_start_registration(callback_query, state: FSMContext):
-        logger.info(
-            f"Нажата кнопка 'Регистрация' от user_id={callback_query.from_user.id}"
-        )
+        # Проверка даты окончания регистрации
         reg_end_date = get_setting("reg_end_date")
         if reg_end_date:
             try:
@@ -230,24 +255,102 @@ def register_registration_handlers(dp: Dispatcher, bot: Bot, admin_id: int):
                 end_date = moscow_tz.localize(end_date)
                 current_time = datetime.now(moscow_tz)
                 if current_time > end_date:
-                    logger.info(
-                        f"Попытка регистрации после окончания: user_id={callback_query.from_user.id}"
-                    )
-                    await callback_query.message.answer(messages["registration_closed"])
-                    await callback_query.message.delete()
+                    await message.answer(messages["registration_closed"])
+                    await state.clear()
                     return
             except ValueError:
-                logger.error(
-                    f"Некорректный формат даты окончания регистрации: {reg_end_date}"
+                logger.error(f"Некорректный формат reg_end_date: {reg_end_date}")
+                await message.answer(messages["invalid_command"])
+                await state.clear()
+                return
+
+        afisha_path = "/app/images/afisha.jpeg"
+        try:
+            if os.path.exists(afisha_path):
+                await bot.send_photo(
+                    chat_id=user_id,
+                    photo=FSInputFile(path=afisha_path),
+                    caption=messages["start_message"],
+                    reply_markup=create_register_keyboard(),
                 )
-        await callback_query.message.answer("Пожалуйста, введите ваше имя.")
-        await state.set_state(RegistrationForm.waiting_for_name)
+            else:
+                await message.answer(
+                    messages["start_message"],
+                    reply_markup=create_register_keyboard(),
+                )
+        except TelegramBadRequest as e:
+            logger.error(
+                f"Ошибка при отправке сообщения /start пользователю user_id={user_id}: {e}"
+            )
+            await message.answer(
+                messages["start_message"],
+                reply_markup=create_register_keyboard(),
+            )
+
+    @dp.callback_query(F.data == "start_registration")
+    async def process_start_registration(
+        callback_query: CallbackQuery, state: FSMContext
+    ):
+        user_id = callback_query.from_user.id
+        logger.info(f"Callback start_registration от user_id={user_id}")
+        await callback_query.message.delete()
+
+        # Проверка даты окончания регистрации
+        reg_end_date = get_setting("reg_end_date")
+        if reg_end_date:
+            try:
+                end_date = datetime.strptime(reg_end_date, "%H:%M %d.%m.%Y")
+                moscow_tz = timezone("Europe/Moscow")
+                end_date = moscow_tz.localize(end_date)
+                current_time = datetime.now(moscow_tz)
+                if current_time > end_date:
+                    await callback_query.message.answer(messages["registration_closed"])
+                    await callback_query.answer()
+                    return
+            except ValueError:
+                logger.error(f"Некорректный формат reg_end_date: {reg_end_date}")
+                await callback_query.message.answer(messages["invalid_command"])
+                await callback_query.answer()
+                return
+
+        # Проверка, есть ли пользователь в participants или race_*
+        participant = get_participant_by_user_id(user_id)
+        past_races = get_past_races()
+        previous_name = None
+        if participant:
+            previous_name = participant[2]
+        else:
+            conn = sqlite3.connect("/app/data/race_participants.db")
+            cursor = conn.cursor()
+            for race_date in past_races:
+                table_name = f"race_{race_date.replace('.', '_')}"
+                cursor.execute(
+                    f"SELECT name FROM {table_name} WHERE user_id = ?", (user_id,)
+                )
+                result = cursor.fetchone()
+                if result:
+                    previous_name = result[0]
+                    break
+            conn.close()
+
+        # Если имя уже есть, пропускаем ввод имени
+        if previous_name:
+            await state.update_data(name=previous_name)
+            await callback_query.message.answer(
+                messages["role_prompt"], reply_markup=create_role_keyboard()
+            )
+            await state.set_state(RegistrationForm.waiting_for_role)
+        else:
+            await callback_query.message.answer("Пожалуйста, введите ваше имя.")
+            await state.set_state(RegistrationForm.waiting_for_name)
         await callback_query.answer()
 
     @dp.message(StateFilter(RegistrationForm.waiting_for_name))
     async def process_name(message: Message, state: FSMContext):
         name = message.text.strip()
-        logger.info(f"Получено имя: {name} от user_id={message.from_user.id}")
+        if not name:
+            await message.answer("Пожалуйста, введите ваше имя.")
+            return
         await state.update_data(name=name)
         await message.answer(
             messages["role_prompt"], reply_markup=create_role_keyboard()
@@ -255,23 +358,19 @@ def register_registration_handlers(dp: Dispatcher, bot: Bot, admin_id: int):
         await state.set_state(RegistrationForm.waiting_for_role)
 
     @dp.callback_query(StateFilter(RegistrationForm.waiting_for_role))
-    async def process_role(callback_query, state: FSMContext):
-        logger.info(f"Обработка выбора роли от user_id={callback_query.from_user.id}")
+    async def process_role(callback_query: CallbackQuery, state: FSMContext):
         if callback_query.data not in ["role_runner", "role_volunteer"]:
-            logger.warning(f"Неверный выбор роли: {callback_query.data}")
             await callback_query.message.answer("Неверный выбор роли.")
             await callback_query.answer()
             await state.clear()
             return
         role = "runner" if callback_query.data == "role_runner" else "volunteer"
-        logger.info(f"Выбрана роль: {role} для user_id={callback_query.from_user.id}")
         max_count = (
             get_setting("max_runners")
             if role == "runner"
             else get_setting("max_volunteers")
         )
         if max_count is None:
-            logger.error(f"Не найдена настройка max_{role}s в базе данных")
             await callback_query.message.answer(
                 "Ошибка конфигурации. Свяжитесь с администратором."
             )
@@ -283,18 +382,14 @@ def register_registration_handlers(dp: Dispatcher, bot: Bot, admin_id: int):
         name = user_data.get("name")
         username = callback_query.from_user.username or "не указан"
         if current_count >= max_count:
-            logger.info(f"Лимит для роли {role} достигнут: {current_count}/{max_count}")
             success = add_pending_registration(
-                callback_query.from_user.id,
+                user_id=callback_query.from_user.id,
                 username=username,
                 name=name,
                 target_time=user_data.get("target_time", ""),
                 role=role,
             )
             if not success:
-                logger.error(
-                    f"Ошибка при сохранении user_id={callback_query.from_user.id} в pending_registrations"
-                )
                 await callback_query.message.answer(
                     "Ошибка при записи в очередь ожидания. Попробуйте снова."
                 )
@@ -312,13 +407,8 @@ def register_registration_handlers(dp: Dispatcher, bot: Bot, admin_id: int):
                             username=username,
                         ),
                     )
-                    logger.info(
-                        f"Уведомление о превышении лимита бегунов отправлено администратору (admin_id={admin_id})"
-                    )
-                except Exception as e:
-                    logger.error(
-                        f"Ошибка при отправке уведомления администратору (admin_id={admin_id}): {e}"
-                    )
+                except TelegramBadRequest as e:
+                    logger.error(f"Ошибка при отправке уведомления администратору: {e}")
             await callback_query.answer()
             await state.clear()
             return
@@ -326,18 +416,18 @@ def register_registration_handlers(dp: Dispatcher, bot: Bot, admin_id: int):
         if role == "runner":
             await callback_query.message.answer(messages["target_time_prompt"])
             await state.set_state(RegistrationForm.waiting_for_target_time)
-            await callback_query.answer()
         else:
             success = add_participant(
-                callback_query.from_user.id, username, name, "", role, ""
+                user_id=callback_query.from_user.id,
+                username=username,
+                name=name,
+                target_time="",
+                role=role,
+                gender="",
             )
             if success:
-                logger.info(
-                    f"Успешная регистрация: {name}, {role}, user_id={callback_query.from_user.id}"
-                )
-                time_field = "💪🏼 Вы волонтер"
+                time_field = "💪🏼 Вы волонтёр"
                 extra_info = ""
-                time_field = "💪🏼 " + time_field.split(" ")[2].capitalize()
                 user_message = messages["registration_success"].format(
                     name=name, time_field=time_field, extra_info=extra_info
                 )
@@ -350,40 +440,33 @@ def register_registration_handlers(dp: Dispatcher, bot: Bot, admin_id: int):
                     extra_info=extra_info,
                 )
                 try:
-                    await bot.send_message(chat_id=admin_id, text=admin_message)
-                    logger.info(
-                        f"Уведомление администратору (admin_id={admin_id}) отправлено"
-                    )
-                except TelegramBadRequest as e:
-                    logger.error(
-                        f"Ошибка при отправке уведомления администратору (admin_id={admin_id}): {e}"
-                    )
-                try:
                     image_path = config.get(
                         "sponsor_image_path", "/app/images/sponsor_image.jpeg"
                     )
                     if os.path.exists(image_path):
                         await bot.send_photo(
-                            chat_id=callback_query.from_user.id,
-                            photo=FSInputFile(image_path),
-                            caption=messages["sponsor_message"],
-                        )
-                        logger.info(
-                            f"Сообщение со спонсорами отправлено пользователю user_id={callback_query.from_user.id}"
+                            chat_id=admin_id,
+                            photo=FSInputFile(path=image_path),
+                            caption=admin_message,
                         )
                     else:
-                        logger.warning(
-                            f"Файл {image_path} не найден, отправляется только текст спонсоров"
+                        await bot.send_message(chat_id=admin_id, text=admin_message)
+                except TelegramBadRequest as e:
+                    logger.error(f"Ошибка при отправке уведомления администратору: {e}")
+                try:
+                    if os.path.exists(image_path):
+                        await bot.send_photo(
+                            chat_id=callback_query.from_user.id,
+                            photo=FSInputFile(path=image_path),
+                            caption=messages["sponsor_message"],
                         )
+                    else:
                         await callback_query.message.answer(messages["sponsor_message"])
                 except TelegramForbiddenError:
                     logger.warning(
                         f"Пользователь user_id={callback_query.from_user.id} заблокировал бот"
                     )
                     delete_pending_registration(callback_query.from_user.id)
-                    logger.info(
-                        f"Пользователь user_id={callback_query.from_user.id} удалён из таблицы pending_registrations"
-                    )
                     try:
                         await bot.send_message(
                             chat_id=admin_id,
@@ -393,47 +476,27 @@ def register_registration_handlers(dp: Dispatcher, bot: Bot, admin_id: int):
                                 user_id=callback_query.from_user.id,
                             ),
                         )
-                        logger.info(
-                            f"Уведомление администратору (admin_id={admin_id}) о блокировке отправлено"
-                        )
-                    except Exception as admin_e:
+                    except TelegramBadRequest as e:
                         logger.error(
-                            f"Ошибка при отправке уведомления администратору: {admin_e}"
+                            f"Ошибка при отправке уведомления администратору: {e}"
                         )
                 except TelegramBadRequest as e:
-                    logger.error(
-                        f"Ошибка при отправке сообщения со спонсорами пользователю user_id={callback_query.from_user.id}: {e}"
-                    )
+                    logger.error(f"Ошибка при отправке сообщения со спонсорами: {e}")
                     await callback_query.message.answer(messages["sponsor_message"])
-                logger.info(
-                    f"Сообщения отправлены: пользователю и админу (admin_id={admin_id})"
-                )
-                participant_count = get_participant_count()
-                logger.info(f"Всего участников: {participant_count}")
                 delete_pending_registration(callback_query.from_user.id)
             else:
-                logger.error(
-                    f"Ошибка регистрации для user_id={callback_query.from_user.id}"
-                )
                 await callback_query.message.answer(
                     "Ошибка при регистрации. Попробуйте снова."
                 )
-            await callback_query.answer()
             await state.clear()
+        await callback_query.answer()
 
     @dp.message(StateFilter(RegistrationForm.waiting_for_target_time))
     async def process_target_time(message: Message, state: FSMContext):
         target_time = message.text.strip()
-        if not target_time:
-            await message.answer(
-                "Целевое время не может быть пустым. Введите ваше целевое время прохождения трасс(например, '5:30' или '1:05:30'):"
-            )
-            return
         time_pattern = re.compile(r"^(?:\d{1,2}:)?[0-5]?\d:[0-5]\d$")
         if not time_pattern.match(target_time):
-            await message.answer(
-                "Некорректный формат времени. Введите время в формате 'M:SS' или 'H:MM:SS' (например, '5:30' или '1:05:30'):"
-            )
+            await message.answer(messages["target_time_prompt"])
             return
         await state.update_data(target_time=target_time)
         await message.answer(
@@ -444,7 +507,6 @@ def register_registration_handlers(dp: Dispatcher, bot: Bot, admin_id: int):
     @dp.callback_query(StateFilter(RegistrationForm.waiting_for_gender))
     async def process_gender(callback_query: CallbackQuery, state: FSMContext):
         gender = callback_query.data
-        await callback_query.message.delete()
         user_id = callback_query.from_user.id
         user_data = await state.get_data()
         name = user_data.get("name")
@@ -452,196 +514,124 @@ def register_registration_handlers(dp: Dispatcher, bot: Bot, admin_id: int):
         target_time = user_data.get("target_time")
         username = callback_query.from_user.username or "не указан"
         success = add_participant(
-            user_id,
-            username,
-            name,
-            target_time,
-            role,
-            gender,
+            user_id=user_id,
+            username=username,
+            name=name,
+            target_time=target_time,
+            role=role,
+            gender=gender,
         )
         if success:
-            logger.info(
-                f"Успешная регистрация: {name}, {role}, user_id={callback_query.from_user.id}"
-            )
+            await callback_query.message.delete()
             time_field = f"Целевое время: {target_time}"
             extra_info = "💰 Ожидается оплата.\nПосле поступления оплаты вы получите подтверждение участия."
-            user_message = messages["registration_success"].format(
-                name=name, time_field=time_field, extra_info=extra_info
+            await callback_query.message.answer(
+                messages["registration_success"].format(
+                    name=name, time_field=time_field, extra_info=extra_info
+                )
             )
-            await callback_query.message.answer(user_message)
             admin_message = messages["admin_notification"].format(
                 name=name,
                 time_field=time_field,
-                user_id=callback_query.from_user.id,
+                user_id=user_id,
                 username=username,
                 extra_info=extra_info,
             )
             try:
-                await bot.send_message(chat_id=admin_id, text=admin_message)
-                logger.info(
-                    f"Уведомление администратору (admin_id={admin_id}) отправлено"
-                )
-            except TelegramBadRequest as e:
-                logger.error(
-                    f"Ошибка при отправке уведомления администратору (admin_id={admin_id}): {e}"
-                )
-            try:
                 image_path = config.get(
                     "sponsor_image_path", "/app/images/sponsor_image.jpeg"
                 )
+                await bot.send_message(chat_id=admin_id, text=admin_message)
+            except TelegramBadRequest as e:
+                logger.error(f"Ошибка при отправке уведомления администратору: {e}")
+            try:
                 if os.path.exists(image_path):
                     await bot.send_photo(
-                        chat_id=callback_query.from_user.id,
-                        photo=FSInputFile(image_path),
+                        chat_id=user_id,
+                        photo=FSInputFile(path=image_path),
                         caption=messages["sponsor_message"],
                     )
-                    logger.info(
-                        f"Сообщение со спонсорами отправлено пользователю user_id={callback_query.from_user.id}"
-                    )
                 else:
-                    logger.warning(
-                        f"Файл {image_path} не найден, отправляется только текст спонсоров"
-                    )
                     await callback_query.message.answer(messages["sponsor_message"])
             except TelegramForbiddenError:
-                logger.warning(
-                    f"Пользователь user_id={callback_query.from_user.id} заблокировал бот"
-                )
-                delete_pending_registration(callback_query.from_user.id)
-                logger.info(
-                    f"Пользователь user_id={callback_query.from_user.id} удалён из таблицы pending_registrations"
-                )
+                logger.warning(f"Пользователь user_id={user_id} заблокировал бот")
+                delete_pending_registration(user_id)
                 try:
                     await bot.send_message(
                         chat_id=admin_id,
                         text=messages["admin_blocked_notification"].format(
-                            name=name,
-                            username=username,
-                            user_id=callback_query.from_user.id,
+                            name=name, username=username, user_id=user_id
                         ),
                     )
-                    logger.info(
-                        f"Уведомление администратору (admin_id={admin_id}) о блокировке отправлено"
-                    )
-                except Exception as admin_e:
-                    logger.error(
-                        f"Ошибка при отправке уведомления администратору: {admin_e}"
-                    )
+                except TelegramBadRequest as e:
+                    logger.error(f"Ошибка при отправке уведомления администратору: {e}")
             except TelegramBadRequest as e:
-                logger.error(
-                    f"Ошибка при отправке сообщения со спонсорами пользователю user_id={callback_query.from_user.id}: {e}"
-                )
-                await callback_query.answer(messages["sponsor_message"])
-            logger.info(
-                f"Сообщения отправлены: пользователю и админу (admin_id={admin_id})"
-            )
-            participant_count = get_participant_count()
-            logger.info(f"Всего участников: {participant_count}")
-            delete_pending_registration(callback_query.from_user.id)
+                logger.error(f"Ошибка при отправке сообщения со спонсорами: {e}")
+                await callback_query.message.answer(messages["sponsor_message"])
+            delete_pending_registration(user_id)
+            await state.clear()
         else:
-            logger.error(
-                f"Ошибка регистрации для user_id={callback_query.from_user.id}"
-            )
+            await callback_query.message.delete()
             await callback_query.message.answer(
                 "Ошибка при регистрации. Попробуйте снова."
             )
-        await state.clear()
+        await callback_query.answer()
 
     @dp.callback_query(F.data.in_(["confirm_participation", "decline_participation"]))
-    async def process_participation_response(callback_query, state: FSMContext):
-        logger.info(
-            f"Обработка ответа на участие от user_id={callback_query.from_user.id}"
-        )
-        participant = get_participant_by_user_id(callback_query.from_user.id)
+    async def process_participation_response(
+        callback_query: CallbackQuery, state: FSMContext
+    ):
+        user_id = callback_query.from_user.id
+        participant = get_participant_by_user_id(user_id)
         if not participant:
-            logger.warning(
-                f"Пользователь user_id={callback_query.from_user.id} не найден в participants"
-            )
+            await callback_query.message.delete()
             await callback_query.message.answer("Вы не зарегистрированы.")
             await callback_query.answer()
-            try:
-                await callback_query.message.delete()
-                logger.info(
-                    f"Сообщение с кнопками удалено для user_id={callback_query.from_user.id}"
-                )
-            except TelegramBadRequest as e:
-                logger.warning(
-                    f"Не удалось удалить сообщение для user_id={callback_query.from_user.id}: {e}"
-                )
             return
         name = participant[2]
         role = participant[4]
         payment_status = participant[6]
         username = callback_query.from_user.username or "не указан"
+        await callback_query.message.delete()
         if callback_query.data == "confirm_participation":
             if role == "volunteer":
                 await callback_query.message.answer(
-                    messages.get(
-                        "volunteer_confirm_message",
-                        "Спасибо за подтверждение участия в качестве волонтёра!",
-                    )
+                    messages["volunteer_confirm_message"]
                 )
-                logger.info(
-                    f"Пользователь {name} (user_id={callback_query.from_user.id}) подтвердил участие как волонтёр"
+                admin_message = messages["admin_volunteer_confirm_notification"].format(
+                    name=name, username=username
                 )
-                admin_message = messages.get(
-                    "admin_volunteer_confirm_notification",
-                    "Пользователь {name} (@{username}) подтвердил участие как волонтёр.",
-                ).format(name=name, username=username)
             else:
                 if payment_status == "paid":
                     await callback_query.message.answer(
                         messages["confirm_paid_message"]
                     )
-                    logger.info(
-                        f"Пользователь {name} (user_id={callback_query.from_user.id}) подтвердил участие, оплата подтверждена"
-                    )
-                    admin_message = messages["admin_confirm_notification"].format(
-                        name=name, username=username, payment_status="оплачено"
-                    )
                 else:
                     await callback_query.message.answer(
                         messages["confirm_pending_message"]
                     )
-                    logger.info(
-                        f"Пользователь {name} (user_id={callback_query.from_user.id}) подтвердил участие, но оплата не подтверждена"
-                    )
-                    admin_message = messages["admin_confirm_notification"].format(
-                        name=name, username=username, payment_status="не оплачено"
-                    )
+                admin_message = messages["admin_confirm_notification"].format(
+                    name=name,
+                    username=username,
+                    payment_status=(
+                        "оплачено" if payment_status == "paid" else "не оплачено"
+                    ),
+                )
             try:
                 await bot.send_message(chat_id=admin_id, text=admin_message)
-                logger.info(
-                    f"Уведомление администратору (admin_id={admin_id}) отправлено"
-                )
             except TelegramBadRequest as e:
-                logger.error(
-                    f"Ошибка при отправке уведомления администратору (admin_id={admin_id}): {e}"
-                )
-        elif callback_query.data == "decline_participation":
-            await callback_query.message.answer(messages["decline_message"])
-            logger.info(
-                f"Пользователь {name} (user_id={callback_query.from_user.id}) отказался от участия"
-            )
-            admin_message = messages["admin_decline_notification"].format(name=name)
-            try:
-                await bot.send_message(chat_id=admin_id, text=admin_message)
-                logger.info(
-                    f"Уведомление администратору (admin_id={admin_id}) отправлено"
-                )
-            except TelegramBadRequest as e:
-                logger.error(
-                    f"Ошибка при отправке уведомления администратору (admin_id={admin_id}): {e}"
-                )
-        try:
-            await callback_query.message.delete()
-            logger.info(
-                f"Сообщение с кнопками удалено для user_id={callback_query.from_user.id}"
-            )
-        except TelegramBadRequest as e:
-            logger.warning(
-                f"Не удалось удалить сообщение для user_id={callback_query.from_user.id}: {e}"
-            )
+                logger.error(f"Ошибка при отправке уведомления администратору: {e}")
+        else:
+            success = delete_participant(user_id)
+            if success:
+                await callback_query.message.answer(messages["decline_message"])
+                admin_message = messages["admin_decline_notification"].format(name=name)
+                try:
+                    await bot.send_message(chat_id=admin_id, text=admin_message)
+                except TelegramBadRequest as e:
+                    logger.error(f"Ошибка при отправке уведомления администратору: {e}")
+            else:
+                await callback_query.message.answer("Ошибка при отказе от участия.")
         await callback_query.answer()
         await state.clear()
 
@@ -674,7 +664,22 @@ def register_registration_handlers(dp: Dispatcher, bot: Bot, admin_id: int):
     @dp.callback_query(F.data == "main_menu")
     async def show_main_menu(callback_query: CallbackQuery):
         await callback_query.message.delete()
-        await callback_query.message.answer(
-            messages["admin_commands"], reply_markup=create_admin_commands_keyboard()
-        )
+        if callback_query.from_user.id == admin_id:
+            await callback_query.message.answer(
+                messages["admin_commands"],
+                reply_markup=create_admin_commands_keyboard(),
+            )
+        else:
+            afisha_path = "/app/images/afisha.jpeg"
+            if os.path.exists(afisha_path):
+                await bot.send_photo(
+                    chat_id=callback_query.from_user.id,
+                    photo=FSInputFile(path=afisha_path),
+                    caption=messages["start_message"],
+                    reply_markup=create_register_keyboard(),
+                )
+            else:
+                await callback_query.message.answer(
+                    messages["start_message"], reply_markup=create_register_keyboard()
+                )
         await callback_query.answer()
