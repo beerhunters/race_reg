@@ -575,7 +575,7 @@ def register_notification_handlers(dp: Dispatcher, bot: Bot, admin_id: int):
                 success_count += 1
                 logger.info(f"Уведомление отправлено user_id={user_id}")
             except Exception as e:
-                if "blocked by user" in str(e).lower():
+                if "blocked" in str(e).lower():
                     delete_participant(user_id)
                     delete_pending_registration(user_id)
                     await message.answer(
