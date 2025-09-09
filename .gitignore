@@ -167,3 +167,4 @@ bot.log
 data/
 logs/
 images/
+/.claude/
