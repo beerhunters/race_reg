@@ -1000,7 +1000,7 @@ def register_admin_participant_handlers(dp: Dispatcher, bot: Bot, admin_id: int)
         
     async def show_next_participant_for_result(message: Message, state: FSMContext, participant, index, total):
         """Show current participant for result input"""
-        user_id_p, username, name, target_time, role, reg_date, payment_status, bib_number, result, gender = participant
+        user_id_p, username, name, target_time, role, reg_date, payment_status, bib_number, result, gender, category, cluster = participant
         
         text = f"📝 <b>Запись результатов</b> ({index + 1}/{total})\n\n"
         text += f"👤 <b>{name}</b>\n"
@@ -1013,11 +1013,11 @@ def register_admin_participant_handlers(dp: Dispatcher, bot: Bot, admin_id: int)
             text += f"\n🏃 Текущий результат: {result}"
         
         text += f"\n\n💬 Введите результат для <b>{name}</b>:"
-        text += f"\n• Формат: <code>мм:сс</code> или <code>ч:мм:сс</code>"
-        text += f"\n• Для DNF введите: <code>DNF</code>"
-        text += f"\n• Пропустить: <code>skip</code>"
+        text += f"\n• Формат времени: <code>ММ:СС</code> (например: 08:45)"
+        text += f"\n• Или используйте кнопки ниже"
         
-        await message.answer(text)
+        from .utils import create_result_input_keyboard
+        await message.answer(text, reply_markup=create_result_input_keyboard())
     
     @dp.message(RegistrationForm.waiting_for_participant_result)
     async def process_participant_result(message: Message, state: FSMContext):
@@ -1069,6 +1069,81 @@ def register_admin_participant_handlers(dp: Dispatcher, bot: Bot, admin_id: int)
         else:
             # All participants processed, show summary and ask for notification
             await show_results_summary(message, state, runners, results)
+    
+    @dp.callback_query(F.data == "result_skip", RegistrationForm.waiting_for_participant_result)
+    async def process_skip_result(callback_query: CallbackQuery, state: FSMContext):
+        """Process skip button for participant result"""
+        await callback_query.answer()
+        await callback_query.message.delete()
+        
+        data = await state.get_data()
+        runners = data.get('runners', [])
+        current_index = data.get('current_index', 0)
+        results = data.get('results', {})
+        
+        if current_index >= len(runners):
+            await callback_query.message.answer("❌ Ошибка: индекс участника вышел за границы.")
+            await state.clear()
+            return
+        
+        current_participant = runners[current_index]
+        user_id_p = current_participant[0]
+        name = current_participant[2]
+        
+        logger.info(f"Пропущен результат для участника {name} (ID: {user_id_p})")
+        
+        # Move to next participant
+        current_index += 1
+        
+        if current_index < len(runners):
+            # Show next participant
+            await state.update_data(
+                current_index=current_index,
+                results=results
+            )
+            next_participant = runners[current_index]
+            await show_next_participant_for_result(callback_query.message, state, next_participant, current_index, len(runners))
+        else:
+            # All participants processed, show summary and ask for notification
+            await show_results_summary(callback_query.message, state, runners, results)
+    
+    @dp.callback_query(F.data == "result_dnf", RegistrationForm.waiting_for_participant_result)
+    async def process_dnf_result(callback_query: CallbackQuery, state: FSMContext):
+        """Process DNF button for participant result"""
+        await callback_query.answer()
+        await callback_query.message.delete()
+        
+        data = await state.get_data()
+        runners = data.get('runners', [])
+        current_index = data.get('current_index', 0)
+        results = data.get('results', {})
+        
+        if current_index >= len(runners):
+            await callback_query.message.answer("❌ Ошибка: индекс участника вышел за границы.")
+            await state.clear()
+            return
+        
+        current_participant = runners[current_index]
+        user_id_p = current_participant[0]
+        name = current_participant[2]
+        
+        results[user_id_p] = 'DNF'
+        logger.info(f"Записан DNF для участника {name} (ID: {user_id_p})")
+        
+        # Move to next participant
+        current_index += 1
+        
+        if current_index < len(runners):
+            # Show next participant
+            await state.update_data(
+                current_index=current_index,
+                results=results
+            )
+            next_participant = runners[current_index]
+            await show_next_participant_for_result(callback_query.message, state, next_participant, current_index, len(runners))
+        else:
+            # All participants processed, show summary and ask for notification
+            await show_results_summary(callback_query.message, state, runners, results)
     
     async def show_results_summary(message: Message, state: FSMContext, runners, results):
         """Show summary of all results and ask for mass notification"""
@@ -2251,23 +2326,52 @@ def register_admin_participant_handlers(dp: Dispatcher, bot: Bot, admin_id: int)
                 
                 sorted_runners = sorted(cat_runners, key=sort_key)
                 
-                place = 1
+                # Separate runners by result type
+                finishers = []
+                dnf_runners = []
+                no_result_runners = []
+                
                 for runner in sorted_runners:
-                    name = runner[2]
-                    result = runner[8] or "—"
-                    bib_number = runner[6] if len(runner) > 6 else None  # bib_number
-                    
+                    result = runner[8] or ""
                     if result == "DNF":
-                        protocol_text += f"   DNF. {name}"
-                    elif result == "—":
-                        protocol_text += f"   —. {name}"
+                        dnf_runners.append(runner)
+                    elif result == "" or result == "—":
+                        no_result_runners.append(runner)
                     else:
-                        protocol_text += f"   {place}. {name}"
-                        place += 1
+                        finishers.append(runner)
+                
+                # Display finishers with places
+                place = 1
+                for runner in finishers:
+                    name = runner[2]
+                    result = runner[8]
+                    bib_number = runner[9] if len(runner) > 9 else None
                     
+                    protocol_text += f"   {place}. {name}"
                     if bib_number:
                         protocol_text += f" (№{bib_number})"
                     protocol_text += f" - {result}\n"
+                    place += 1
+                
+                # Display DNF runners at the end
+                for runner in dnf_runners:
+                    name = runner[2]
+                    bib_number = runner[9] if len(runner) > 9 else None
+                    
+                    protocol_text += f"   DNF. {name}"
+                    if bib_number:
+                        protocol_text += f" (№{bib_number})"
+                    protocol_text += " - DNF\n"
+                
+                # Display runners without results
+                for runner in no_result_runners:
+                    name = runner[2]
+                    bib_number = runner[9] if len(runner) > 9 else None
+                    
+                    protocol_text += f"   —. {name}"
+                    if bib_number:
+                        protocol_text += f" (№{bib_number})"
+                    protocol_text += " - —\n"
                 
                 protocol_text += "\n"
             
@@ -2398,23 +2502,52 @@ def register_admin_participant_handlers(dp: Dispatcher, bot: Bot, admin_id: int)
                         
                         sorted_runners = sorted(cat_runners, key=sort_key)
                         
-                        place = 1
+                        # Separate runners by result type
+                        finishers = []
+                        dnf_runners = []
+                        no_result_runners = []
+                        
                         for runner in sorted_runners:
-                            name = runner[2]
-                            result = runner[8] or "—"
-                            bib_number = runner[6] if len(runner) > 6 else None
-                            
+                            result = runner[8] or ""
                             if result == "DNF":
-                                protocol_text += f"    DNF. {name}"
-                            elif result == "—":
-                                protocol_text += f"    —. {name}"
+                                dnf_runners.append(runner)
+                            elif result == "" or result == "—":
+                                no_result_runners.append(runner)
                             else:
-                                protocol_text += f"    {place}. {name}"
-                                place += 1
+                                finishers.append(runner)
+                        
+                        # Display finishers with places
+                        place = 1
+                        for runner in finishers:
+                            name = runner[2]
+                            result = runner[8]
+                            bib_number = runner[9] if len(runner) > 9 else None
                             
+                            protocol_text += f"    {place}. {name}"
                             if bib_number:
                                 protocol_text += f" (№{bib_number})"
                             protocol_text += f" - {result}\n"
+                            place += 1
+                        
+                        # Display DNF runners at the end
+                        for runner in dnf_runners:
+                            name = runner[2]
+                            bib_number = runner[9] if len(runner) > 9 else None
+                            
+                            protocol_text += f"    DNF. {name}"
+                            if bib_number:
+                                protocol_text += f" (№{bib_number})"
+                            protocol_text += " - DNF\n"
+                        
+                        # Display runners without results
+                        for runner in no_result_runners:
+                            name = runner[2]
+                            bib_number = runner[9] if len(runner) > 9 else None
+                            
+                            protocol_text += f"    —. {name}"
+                            if bib_number:
+                                protocol_text += f" (№{bib_number})"
+                            protocol_text += " - —\n"
                     
                     protocol_text += "\n"
             
@@ -2471,7 +2604,7 @@ def register_admin_participant_handlers(dp: Dispatcher, bot: Bot, admin_id: int)
                         name = runner[2]
                         result = runner[8] or "—"
                         user_id_r = runner[0]
-                        bib_number = runner[6] if len(runner) > 6 else None
+                        bib_number = runner[9] if len(runner) > 9 else None
                         
                         if result == "DNF":
                             protocol_text += f"  DNF. {name}"

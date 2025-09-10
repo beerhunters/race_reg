@@ -229,6 +229,19 @@ def create_protocol_keyboard():
     return keyboard
 
 
+def create_result_input_keyboard():
+    """Create keyboard for result input with Skip and DNF options"""
+    keyboard = InlineKeyboardMarkup(
+        inline_keyboard=[
+            [
+                InlineKeyboardButton(text="⏭️ Пропустить", callback_data="result_skip"),
+                InlineKeyboardButton(text="❌ DNF", callback_data="result_dnf"),
+            ],
+        ]
+    )
+    return keyboard
+
+
 def create_edit_profile_keyboard():
     """Create keyboard for profile editing field selection"""
     keyboard = InlineKeyboardMarkup(

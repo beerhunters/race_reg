@@ -299,7 +299,7 @@ def register_cluster_handlers(dp: Dispatcher, bot: Bot, admin_id: int):
         current_cluster = None
         
         for participant in participants:
-            user_id, username, name, target_time, gender, category, cluster, role = participant
+            user_id, username, name, target_time, gender, category, cluster, role, result, bib_number = participant
             
             # Group by category first
             if category != current_category:
@@ -457,7 +457,7 @@ def register_cluster_handlers(dp: Dispatcher, bot: Bot, admin_id: int):
         await callback_query.message.answer(text)
         
         for participant in participants:
-            user_id_p, username, name, target_time, gender, category, cluster, role = participant
+            user_id_p, username, name, target_time, gender, category, cluster, role, result, bib_number = participant
             
             try:
                 # Build personal message
@@ -536,7 +536,7 @@ def register_cluster_handlers(dp: Dispatcher, bot: Bot, admin_id: int):
             # Group by categories first
             categories = {}
             for participant in participants:
-                user_id_p, username, name, target_time, gender, category, cluster, role = participant
+                user_id_p, username, name, target_time, gender, category, cluster, role, result, bib_number = participant
                 if role != "runner":  # Only runners have categories
                     continue
                     
@@ -755,24 +755,9 @@ def register_cluster_handlers(dp: Dispatcher, bot: Bot, admin_id: int):
             
             # Write participant data
             for participant in sorted_participants:
-                user_id_p, username, name, target_time, gender, category, cluster, role = participant[:8]
+                user_id_p, username, name, target_time, gender, category, cluster, role, result, bib_number = participant
                 
-                # Get additional fields if available from get_participants_with_categories
-                # The function returns: user_id, username, name, target_time, gender, category, cluster, role
-                # Need to get bib_number, result from original participants table
-                try:
-                    from database import get_participant_by_user_id
-                    full_participant = get_participant_by_user_id(user_id_p)
-                    if full_participant:
-                        # full_participant structure: user_id, username, name, target_time, role, reg_date, payment_status, bib_number, result, gender, category, cluster
-                        bib_number = full_participant[7]  # bib_number
-                        result = full_participant[8]      # result  
-                    else:
-                        bib_number = None
-                        result = None
-                except:
-                    bib_number = None
-                    result = None
+                # All fields are now available from the participant tuple
                 
                 # Build row
                 row = [

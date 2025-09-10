@@ -1292,7 +1292,7 @@ def get_participants_with_categories() -> list:
             cursor = conn.cursor()
             cursor.execute(
                 """
-                SELECT user_id, username, name, target_time, gender, category, cluster, role 
+                SELECT user_id, username, name, target_time, gender, category, cluster, role, result, bib_number 
                 FROM participants 
                 ORDER BY role = 'runner' DESC, 
                          CASE category 
