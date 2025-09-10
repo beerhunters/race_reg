@@ -9,7 +9,7 @@ from aiogram.types import BotCommand
 from aiogram.enums import ParseMode
 
 from database import init_db
-
+from handlers.backup_handlers import start_automatic_backups, stop_automatic_backups
 
 from handler_register import register_all_handlers
 
@@ -91,6 +91,10 @@ async def main():
     logger.info("Запуск бота")
     init_db()
     register_all_handlers(dp, bot, ADMIN_ID)
+    
+    # Start automatic backups
+    await start_automatic_backups(bot, ADMIN_ID)
+    
     await bot.set_my_commands(
         [
             BotCommand(command="/start", description="Run, drink, repeat!"),
@@ -99,7 +103,12 @@ async def main():
             BotCommand(command="/waitlist_status", description="Позиция в очереди"),
         ]
     )
-    await dp.start_polling(bot)
+    
+    try:
+        await dp.start_polling(bot)
+    finally:
+        # Stop automatic backups on shutdown
+        await stop_automatic_backups()
 
 
 if __name__ == "__main__":

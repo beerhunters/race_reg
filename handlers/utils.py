@@ -132,6 +132,9 @@ class RegistrationForm(StatesGroup):
     # Sequential bib assignment states
     waiting_for_bib_assignment = State()
     
+    # Backup restore states
+    restore_backup = State()
+    
     processed = State()
 
 
@@ -288,6 +291,9 @@ def create_admin_commands_keyboard():
         ),
         InlineKeyboardButton(
             text="🎨 Медиа", callback_data="category_media"
+        ),
+        InlineKeyboardButton(
+            text="💾 Резервные копии", callback_data="admin_backup_settings"
         ),
     ]
     return InlineKeyboardMarkup(inline_keyboard=[[cmd] for cmd in commands])
