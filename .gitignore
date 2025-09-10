@@ -169,4 +169,4 @@ logs/
 images/
 /.claude/
 /handlers/admin_participant_handlers.py.backup
-/database.py.backup
+database.py.backup
