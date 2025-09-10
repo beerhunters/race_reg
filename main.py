@@ -95,6 +95,8 @@ async def main():
         [
             BotCommand(command="/start", description="Run, drink, repeat!"),
             BotCommand(command="/info", description="Информация"),
+            BotCommand(command="/edit_profile", description="Редактировать профиль"),
+            BotCommand(command="/waitlist_status", description="Позиция в очереди"),
         ]
     )
     await dp.start_polling(bot)

@@ -1,5 +1,7 @@
 {
   "csv_delimiter": ";",
-  "log_level": "ERROR",
-  "sponsor_image_path": "/app/images/sponsor_image.jpeg"
+  "log_level": "INFO",
+  "sponsor_image_path": "/app/images/sponsor_image.jpeg",
+  "participation_fee": 750,
+  "participation_fee_currency": "р"
 }
