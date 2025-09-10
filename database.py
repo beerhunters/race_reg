@@ -33,7 +33,7 @@ def init_db():
                     role TEXT NOT NULL,
                     reg_date TEXT NOT NULL,
                     payment_status TEXT DEFAULT 'pending',
-                    bib_number INTEGER,
+                    bib_number TEXT,
                     result TEXT,
                     gender TEXT,
                     category TEXT DEFAULT NULL,
@@ -128,6 +128,71 @@ def init_db():
             logger.info("База данных инициализирована")
     except sqlite3.Error as e:
         logger.error(f"Ошибка при инициализации базы данных: {e}")
+        raise
+    
+    # Run migration for bib_number to TEXT
+    migrate_bib_numbers_to_text()
+
+
+def migrate_bib_numbers_to_text():
+    """
+    Migrate bib_number from INTEGER to TEXT to preserve leading zeros.
+    This function should be called once after the schema change.
+    """
+    try:
+        with sqlite3.connect(DB_PATH, timeout=10) as conn:
+            cursor = conn.cursor()
+            
+            # Check if bib_number column type is already TEXT
+            cursor.execute("PRAGMA table_info(participants)")
+            columns = cursor.fetchall()
+            bib_column = next((col for col in columns if col[1] == 'bib_number'), None)
+            
+            if bib_column and bib_column[2] == 'INTEGER':
+                logger.info("Migrating bib_number from INTEGER to TEXT...")
+                
+                # Create temporary table with TEXT bib_number
+                cursor.execute("""
+                    CREATE TABLE participants_temp (
+                        user_id INTEGER PRIMARY KEY,
+                        username TEXT,
+                        name TEXT NOT NULL,
+                        target_time TEXT,
+                        role TEXT NOT NULL,
+                        reg_date TEXT NOT NULL,
+                        payment_status TEXT DEFAULT 'pending',
+                        bib_number TEXT,
+                        result TEXT,
+                        gender TEXT,
+                        category TEXT DEFAULT NULL,
+                        cluster TEXT DEFAULT NULL
+                    )
+                """)
+                
+                # Copy data, converting bib_number to TEXT with leading zeros preserved
+                cursor.execute("""
+                    INSERT INTO participants_temp 
+                    SELECT user_id, username, name, target_time, role, reg_date, 
+                           payment_status, 
+                           CASE 
+                               WHEN bib_number IS NULL THEN NULL
+                               ELSE printf('%03d', bib_number)  -- Format with leading zeros
+                           END,
+                           result, gender, category, cluster
+                    FROM participants
+                """)
+                
+                # Drop old table and rename new one
+                cursor.execute("DROP TABLE participants")
+                cursor.execute("ALTER TABLE participants_temp RENAME TO participants")
+                
+                conn.commit()
+                logger.info("Successfully migrated bib_number to TEXT with leading zeros preserved")
+            else:
+                logger.info("bib_number is already TEXT type, no migration needed")
+                
+    except sqlite3.Error as e:
+        logger.error(f"Error during bib_number migration: {e}")
         raise
 
 
@@ -242,7 +307,7 @@ def update_payment_status(user_id: int, status: str):
         logger.error(f"Ошибка при обновлении статуса оплаты для user_id={user_id}: {e}")
 
 
-def set_bib_number(user_id: int, bib_number: int):
+def set_bib_number(user_id: int, bib_number: str):
     try:
         with sqlite3.connect(DB_PATH) as conn:
             cursor = conn.cursor()
@@ -408,7 +473,7 @@ def save_race_to_db(race_date: str) -> bool:
                 role TEXT,
                 registration_date TEXT,
                 payment_status TEXT,
-                bib_number INTEGER,
+                bib_number TEXT,
                 result TEXT,
                 gender TEXT
             )
@@ -942,7 +1007,7 @@ def archive_race_data(race_date: str) -> bool:
                     role TEXT NOT NULL,
                     reg_date TEXT NOT NULL,
                     payment_status TEXT DEFAULT 'pending',
-                    bib_number INTEGER,
+                    bib_number TEXT,
                     result TEXT,
                     gender TEXT,
                     category TEXT,

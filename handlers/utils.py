@@ -220,9 +220,6 @@ def create_protocol_keyboard():
                 InlineKeyboardButton(
                     text="🏆 По категориям", callback_data="protocol_by_category"
                 ),
-                InlineKeyboardButton(
-                    text="🎯 По кластерам", callback_data="protocol_by_cluster"
-                ),
             ],
         ]
     )

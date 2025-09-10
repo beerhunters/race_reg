@@ -633,7 +633,7 @@ def register_admin_participant_handlers(dp: Dispatcher, bot: Bot, admin_id: int)
         # Get existing bib numbers to check for duplicates  
         all_participants = get_all_participants()
         existing_bibs = [
-            str(p[7]) for p in all_participants if p[7] is not None
+            p[7] for p in all_participants if p[7] is not None
         ]  # bib_number is at index 7
         
         # Check for duplicate bib numbers
@@ -923,8 +923,6 @@ def register_admin_participant_handlers(dp: Dispatcher, bot: Bot, admin_id: int)
             filename = f"beer_mile_export_{timestamp}.csv"
             
             logger.info(f"CSV-файл сформирован, размер: {len(csv_content)} символов, разделитель: {delimiter}")
-            
-            await message.answer("📄 <b>Экспорт всех таблиц</b>\n\nГенерирую CSV-файл со всеми данными...")
             
             csv_bytes = csv_content.encode("utf-8-sig")
             await message.answer_document(
@@ -1523,8 +1521,6 @@ def register_admin_participant_handlers(dp: Dispatcher, bot: Bot, admin_id: int)
             await state.set_state(RegistrationForm.waiting_for_gender_protocol)
         elif action == "protocol_by_category":
             await show_category_protocol(callback_query)
-        elif action == "protocol_by_cluster":
-            await show_cluster_protocol(callback_query)
         await callback_query.answer()
 
     async def show_full_protocol(event: [Message, CallbackQuery]):
@@ -2063,14 +2059,14 @@ def register_admin_participant_handlers(dp: Dispatcher, bot: Bot, admin_id: int)
         
         # Check for duplicate bib numbers
         all_participants = get_all_participants()
-        existing_bibs = [str(p[7]) for p in all_participants if p[7] is not None and p[0] != user_id]
+        existing_bibs = [p[7] for p in all_participants if p[7] is not None and p[0] != user_id]
         
         if bib_input in existing_bibs:
             await message.answer(f"❌ Номер {bib_input} уже используется другим участником. Введите другой номер:")
             return
         
         # Set bib number
-        success = set_bib_number(user_id, int(bib_input))
+        success = set_bib_number(user_id, bib_input)
         
         if success:
             await message.answer(f"✅ Номер {bib_input} присвоен участнику {name}")
@@ -2398,251 +2394,6 @@ def register_admin_participant_handlers(dp: Dispatcher, bot: Bot, admin_id: int)
                 
         except Exception as e:
             logger.error(f"Ошибка при формировании протокола по категориям: {e}")
-            await event.message.answer("❌ Произошла ошибка при формировании протокола")
-
-    async def show_cluster_protocol(event: [Message, CallbackQuery]):
-        """Show protocol grouped by clusters"""
-        try:
-            from database import get_participants_with_categories
-            
-            participants = get_participants_with_categories()
-            runners = [p for p in participants if p[7] == "runner" and p[8]]  # role == runner and has result
-            
-            if not runners:
-                await event.message.answer("❌ Нет участников с результатами для протокола по кластерам")
-                return
-            
-            # Check if we have clusters
-            has_clusters = any(p[6] for p in runners)  # cluster field
-            if not has_clusters:
-                await event.message.answer("❌ Участники не имеют назначенных кластеров")
-                return
-            
-            # Check if we have categories - affects ranking logic
-            has_categories = any(p[5] for p in runners)  # category field
-            
-            # Group by clusters
-            clusters = {}
-            for runner in runners:
-                cluster = runner[6] or "Без кластера"
-                if cluster not in clusters:
-                    clusters[cluster] = []
-                clusters[cluster].append(runner)
-            
-            # Generate protocol
-            if has_categories:
-                protocol_text = "🎯 <b>ПРОТОКОЛ ПО КЛАСТЕРАМ</b>\n"
-                protocol_text += "<i>(места в рамках категорий)</i>\n\n"
-            else:
-                protocol_text = "🎯 <b>ПРОТОКОЛ ПО КЛАСТЕРАМ</b>\n"
-                protocol_text += "<i>(абсолютные места)</i>\n\n"
-            
-            cluster_order = ["A", "B", "C", "D", "E", "Без кластера"]
-            
-            if has_categories:
-                # Ranking within categories
-                for cluster_name in cluster_order:
-                    if cluster_name not in clusters:
-                        continue
-                    
-                    cluster_runners = clusters[cluster_name]
-                    if not cluster_runners:
-                        continue
-                    
-                    cluster_emoji = {
-                        "A": "🅰️", "B": "🅱️", "C": "🅲", "D": "🅳", "E": "🅴",
-                        "Без кластера": "❓"
-                    }.get(cluster_name, "🎯")
-                    
-                    protocol_text += f"{cluster_emoji} <b>КЛАСТЕР {cluster_name}</b>\n"
-                    protocol_text += "-" * 25 + "\n"
-                    
-                    # Group by categories within cluster
-                    cat_groups = {}
-                    for runner in cluster_runners:
-                        cat = runner[5] or "Без категории"
-                        if cat not in cat_groups:
-                            cat_groups[cat] = []
-                        cat_groups[cat].append(runner)
-                    
-                    for cat_name in ["Элита", "Классика", "Женский", "Команда", "Без категории"]:
-                        if cat_name not in cat_groups:
-                            continue
-                        
-                        cat_runners = cat_groups[cat_name]
-                        if not cat_runners:
-                            continue
-                        
-                        category_emoji = {
-                            "Элита": "🥇",
-                            "Классика": "🏃", 
-                            "Женский": "👩",
-                            "Команда": "👥",
-                            "Без категории": "❓"
-                        }.get(cat_name, "📂")
-                        
-                        protocol_text += f"  {category_emoji} {cat_name}:\n"
-                        
-                        # Sort by result
-                        def sort_key(p):
-                            result = p[8]  # result field
-                            if result == "DNF":
-                                return (2, 0)
-                            elif result is None or result == "":
-                                return (3, 0)
-                            else:
-                                try:
-                                    if ":" in str(result):
-                                        minutes, seconds = map(int, str(result).split(':'))
-                                        return (0, minutes * 60 + seconds)
-                                    else:
-                                        return (1, float(result))
-                                except:
-                                    return (3, 0)
-                        
-                        sorted_runners = sorted(cat_runners, key=sort_key)
-                        
-                        # Separate runners by result type
-                        finishers = []
-                        dnf_runners = []
-                        no_result_runners = []
-                        
-                        for runner in sorted_runners:
-                            result = runner[8] or ""
-                            if result == "DNF":
-                                dnf_runners.append(runner)
-                            elif result == "" or result == "—":
-                                no_result_runners.append(runner)
-                            else:
-                                finishers.append(runner)
-                        
-                        # Display finishers with places
-                        place = 1
-                        for runner in finishers:
-                            name = runner[2]
-                            result = runner[8]
-                            bib_number = runner[9] if len(runner) > 9 else None
-                            
-                            protocol_text += f"    {place}. {name}"
-                            if bib_number:
-                                protocol_text += f" (№{bib_number})"
-                            protocol_text += f" - {result}\n"
-                            place += 1
-                        
-                        # Display DNF runners at the end
-                        for runner in dnf_runners:
-                            name = runner[2]
-                            bib_number = runner[9] if len(runner) > 9 else None
-                            
-                            protocol_text += f"    DNF. {name}"
-                            if bib_number:
-                                protocol_text += f" (№{bib_number})"
-                            protocol_text += " - DNF\n"
-                        
-                        # Display runners without results
-                        for runner in no_result_runners:
-                            name = runner[2]
-                            bib_number = runner[9] if len(runner) > 9 else None
-                            
-                            protocol_text += f"    —. {name}"
-                            if bib_number:
-                                protocol_text += f" (№{bib_number})"
-                            protocol_text += " - —\n"
-                    
-                    protocol_text += "\n"
-            
-            else:
-                # Absolute ranking across all participants
-                # First sort all runners by result
-                def sort_key(p):
-                    result = p[8]  # result field
-                    if result == "DNF":
-                        return (2, 0)
-                    elif result is None or result == "":
-                        return (3, 0)
-                    else:
-                        try:
-                            if ":" in str(result):
-                                minutes, seconds = map(int, str(result).split(':'))
-                                return (0, minutes * 60 + seconds)
-                            else:
-                                return (1, float(result))
-                        except:
-                            return (3, 0)
-                
-                all_sorted_runners = sorted(runners, key=sort_key)
-                
-                # Create place mapping
-                place_map = {}
-                place = 1
-                for runner in all_sorted_runners:
-                    result = runner[8]
-                    if result and result != "DNF":
-                        place_map[runner[0]] = place  # user_id -> place
-                        place += 1
-                
-                for cluster_name in cluster_order:
-                    if cluster_name not in clusters:
-                        continue
-                    
-                    cluster_runners = clusters[cluster_name]
-                    if not cluster_runners:
-                        continue
-                    
-                    cluster_emoji = {
-                        "A": "🅰️", "B": "🅱️", "C": "🅲", "D": "🅳", "E": "🅴",
-                        "Без кластера": "❓"
-                    }.get(cluster_name, "🎯")
-                    
-                    protocol_text += f"{cluster_emoji} <b>КЛАСТЕР {cluster_name}</b>\n"
-                    protocol_text += "-" * 25 + "\n"
-                    
-                    # Sort cluster runners by absolute place
-                    sorted_runners = sorted(cluster_runners, key=sort_key)
-                    
-                    for runner in sorted_runners:
-                        name = runner[2]
-                        result = runner[8] or "—"
-                        user_id_r = runner[0]
-                        bib_number = runner[9] if len(runner) > 9 else None
-                        
-                        if result == "DNF":
-                            protocol_text += f"  DNF. {name}"
-                        elif result == "—":
-                            protocol_text += f"  —. {name}"
-                        else:
-                            abs_place = place_map.get(user_id_r, "—")
-                            protocol_text += f"  {abs_place}. {name}"
-                        
-                        if bib_number:
-                            protocol_text += f" (№{bib_number})"
-                        protocol_text += f" - {result}\n"
-                    
-                    protocol_text += "\n"
-            
-            # Send protocol in chunks if too long
-            if len(protocol_text) > 4000:
-                chunks = []
-                lines = protocol_text.split('\n')
-                current_chunk = ""
-                
-                for line in lines:
-                    if len(current_chunk + line + '\n') > 4000:
-                        chunks.append(current_chunk)
-                        current_chunk = line + '\n'
-                    else:
-                        current_chunk += line + '\n'
-                
-                if current_chunk:
-                    chunks.append(current_chunk)
-                
-                for chunk in chunks:
-                    await event.message.answer(chunk)
-            else:
-                await event.message.answer(protocol_text)
-                
-        except Exception as e:
-            logger.error(f"Ошибка при формировании протокола по кластерам: {e}")
             await event.message.answer("❌ Произошла ошибка при формировании протокола")
 
     logger.info("Обработчики администрирования участников зарегистрированы")

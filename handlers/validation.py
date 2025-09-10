@@ -126,21 +126,25 @@ def validate_participant_limit(limit: int, current_count: int = 0) -> Tuple[bool
     return True, None
 
 
-def validate_bib_number(bib_number: int, existing_bibs: list = None) -> Tuple[bool, Optional[str]]:
+def validate_bib_number(bib_number: str, existing_bibs: list = None) -> Tuple[bool, Optional[str]]:
     """
     Validate bib number with uniqueness check.
     
     Args:
-        bib_number: Proposed bib number
+        bib_number: Proposed bib number (as string to preserve leading zeros)
         existing_bibs: List of already assigned bib numbers
         
     Returns:
         Tuple[bool, Optional[str]]: (is_valid, error_message)
     """
-    if bib_number < 1:
+    if not bib_number.isdigit():
+        return False, "Номер должен содержать только цифры."
+    
+    bib_int = int(bib_number)
+    if bib_int < 1:
         return False, "Номер должен быть больше 0."
     
-    if bib_number > 9999:
+    if bib_int > 9999:
         return False, "Номер не может быть больше 9999."
     
     if existing_bibs and bib_number in existing_bibs:

@@ -790,6 +790,13 @@ def register_cluster_handlers(dp: Dispatcher, bot: Bot, admin_id: int):
             file_data = csv_content.encode('utf-8-sig')  # BOM for Excel compatibility
             input_file = BufferedInputFile(file_data, filename)
             
+            # Send file first without caption or keyboard
+            await bot.send_document(
+                callback_query.from_user.id,
+                input_file
+            )
+            
+            # Then send info message with keyboard
             caption = f"📊 <b>Распределение участников</b>\n\n"
             caption += f"📅 Создано: {current_time.strftime('%d.%m.%Y %H:%M')} МСК\n"
             caption += f"👥 Бегунов в файле: {len(sorted_participants)}\n"
@@ -814,10 +821,9 @@ def register_cluster_handlers(dp: Dispatcher, bot: Bot, admin_id: int):
             
             caption += f"\n💡 Файл готов для печати и обработки в Excel"
             
-            await bot.send_document(
+            await bot.send_message(
                 callback_query.from_user.id,
-                input_file,
-                caption=caption,
+                caption,
                 reply_markup=create_clusters_category_keyboard()
             )
             

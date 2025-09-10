@@ -46,17 +46,40 @@ async def handle_edit_profile_command(message: Message, state: FSMContext):
         await message.answer(messages["edit_profile_not_registered"])
         return
     
-    # participant tuple: (user_id, username, name, target_time, role, reg_date, payment_status, bib_number, result, gender)
+    # participant tuple: (user_id, username, name, target_time, role, reg_date, payment_status, bib_number, result, gender, category, cluster)
     name = participant[2] or "Не указано"
     target_time = participant[3] or "Не указано"
     gender = format_gender_display(participant[9])
     role = "Бегун" if participant[4] == "runner" else "Волонтёр"
     
+    # Категория с эмодзи
+    if participant[10]:
+        category_emoji = {
+            "Элита": "🥇",
+            "Классика": "🏃", 
+            "Женский": "👩",
+            "Команда": "👥"
+        }.get(participant[10], "📂")
+        category = f"{category_emoji} {participant[10]}"
+    else:
+        category = "📂 Не назначена"
+    
+    # Кластер с эмодзи
+    if participant[11]:
+        cluster_emoji = {
+            "A": "🅰️", "B": "🅱️", "C": "🅲", "D": "🅳", "E": "🅴"
+        }.get(participant[11], "🎯")
+        cluster = f"{cluster_emoji} {participant[11]}"
+    else:
+        cluster = "🎯 Не назначен"
+    
     text = messages["edit_profile_start"].format(
         name=name,
         target_time=target_time,
         gender=gender,
-        role=role
+        role=role,
+        category=category,
+        cluster=cluster
     )
     
     await message.answer(text, reply_markup=create_edit_profile_keyboard())

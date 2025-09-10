@@ -135,6 +135,26 @@ async def handle_start_command(message: Message, state: FSMContext, bot: Bot, ad
         bib_number = f"№ {participant[7]}" if participant[7] else "не присвоен"
         payment_status = participant[6]
         gender = "мужской" if participant[9] == "male" else "женский" if participant[9] == "female" else "не указан"
+        # Категория с эмодзи
+        if participant[10]:
+            category_emoji = {
+                "Элита": "🥇",
+                "Классика": "🏃", 
+                "Женский": "👩",
+                "Команда": "👥"
+            }.get(participant[10], "📂")
+            category = f"{category_emoji} {participant[10]}"
+        else:
+            category = "📂 не назначена"
+        
+        # Кластер с эмодзи
+        if participant[11]:
+            cluster_emoji = {
+                "A": "🅰️", "B": "🅱️", "C": "🅲", "D": "🅳", "E": "🅴"
+            }.get(participant[11], "🎯")
+            cluster = f"{cluster_emoji} {participant[11]}"
+        else:
+            cluster = "🎯 не назначен"
         
         # Определяем статус оплаты
         payment_emoji = "✅" if payment_status == "paid" else "⏳"
@@ -147,7 +167,9 @@ async def handle_start_command(message: Message, state: FSMContext, bot: Bot, ad
             f"• Имя: {name}\n"
             f"• Целевое время: {target_time}\n"
             f"• Пол: {gender}\n"
-            f"• Беговой номер: {bib_number}\n\n"
+            f"• Беговой номер: {bib_number}\n"
+            f"• Категория: {category}\n"
+            f"• Кластер: {cluster}\n\n"
             f"💰 <b>Статус оплаты:</b> {payment_emoji} {payment_text}\n\n"
         )
         

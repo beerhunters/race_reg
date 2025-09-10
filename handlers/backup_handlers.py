@@ -46,17 +46,20 @@ def register_backup_handlers(dp: Dispatcher, bot: Bot, admin_id: int):
                 moscow_tz = pytz.timezone("Europe/Moscow")
                 current_time = datetime.now(moscow_tz)
                 
+                # Send file first without caption
+                await bot.send_document(
+                    admin_id,
+                    input_file
+                )
+                
+                # Then send info message
                 caption = f"💾 <b>Резервная копия создана</b>\n\n"
                 caption += f"📅 Дата: {current_time.strftime('%d.%m.%Y %H:%M')} МСК\n"
                 caption += f"📁 Файл: {os.path.basename(backup_file)}\n"
                 caption += f"📊 Размер: {len(file_data) / 1024:.1f} КБ\n\n"
                 caption += "💡 Сохраните файл в надежном месте"
                 
-                await bot.send_document(
-                    admin_id,
-                    input_file,
-                    caption=caption
-                )
+                await bot.send_message(admin_id, caption)
                 
                 await status_message.edit_text("✅ <b>Резервная копия создана и отправлена!</b>")
                 
@@ -403,17 +406,20 @@ async def automatic_backup_scheduler(bot: Bot, admin_id: int):
                     moscow_tz = pytz.timezone("Europe/Moscow")
                     current_time = datetime.now(moscow_tz)
                     
+                    # Send file first without caption
+                    await bot.send_document(
+                        admin_id,
+                        input_file
+                    )
+                    
+                    # Then send info message
                     caption = f"🤖 <b>Автоматическая резервная копия</b>\n\n"
                     caption += f"📅 Создана: {current_time.strftime('%d.%m.%Y %H:%M')} МСК\n"
                     caption += f"📁 Файл: {os.path.basename(backup_file)}\n"
                     caption += f"📊 Размер: {len(file_data) / 1024:.1f} КБ\n\n"
                     caption += "💾 Автоматическое резервное копирование каждые 6 часов"
                     
-                    await bot.send_document(
-                        admin_id,
-                        input_file,
-                        caption=caption
-                    )
+                    await bot.send_message(admin_id, caption)
                     
                     logger.info("Автоматическая резервная копия отправлена администратору")
                     
