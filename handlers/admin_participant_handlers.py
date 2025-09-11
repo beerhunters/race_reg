@@ -24,10 +24,11 @@ from .utils import (
     create_protocol_keyboard,
     create_bib_assignment_keyboard,
     create_bib_notification_confirmation_keyboard,
+    create_back_keyboard,
+    create_admin_commands_keyboard,
 )
 from .validation import (
     validate_user_id,
-    validate_bib_number,
     validate_result_format,
     sanitize_input,
 )
@@ -126,6 +127,19 @@ def register_admin_participant_handlers(dp: Dispatcher, bot: Bot, admin_id: int)
             return
 
         from .utils import create_admin_commands_keyboard
+
+        await callback.message.edit_text(
+            "🔧 <b>Админ-панель</b>\n\nВыберите категорию:",
+            reply_markup=create_admin_commands_keyboard(),
+        )
+        await callback.answer()
+
+    @dp.callback_query(F.data == "admin_menu")
+    async def handle_admin_menu(callback: CallbackQuery):
+        """Handle admin menu button - return to main admin panel"""
+        if callback.from_user.id != admin_id:
+            await callback.answer("❌ Доступ запрещен")
+            return
 
         await callback.message.edit_text(
             "🔧 <b>Админ-панель</b>\n\nВыберите категорию:",
@@ -617,7 +631,7 @@ def register_admin_participant_handlers(dp: Dispatcher, bot: Bot, admin_id: int)
         # Validate user ID
         is_valid, error_message = validate_user_id(parts[0])
         if not is_valid:
-            await message.answer(f"❌ Неверный ID пользователя: {error_message}")
+            await message.answer(f"❌ Неверный ID пользователя: {error_message}", reply_markup=create_back_keyboard("admin_menu"))
             return
 
         user_id = int(parts[0])
@@ -627,7 +641,7 @@ def register_admin_participant_handlers(dp: Dispatcher, bot: Bot, admin_id: int)
         
         # Validate that bib number contains only digits
         if not bib_number.isdigit():
-            await message.answer("❌ Номер должен содержать только цифры.")
+            await message.answer("❌ Номер должен содержать только цифры.", reply_markup=create_back_keyboard("admin_menu"))
             return
             
         # Get existing bib numbers to check for duplicates  
@@ -638,7 +652,7 @@ def register_admin_participant_handlers(dp: Dispatcher, bot: Bot, admin_id: int)
         
         # Check for duplicate bib numbers
         if bib_number in existing_bibs:
-            await message.answer(f"❌ Номер {bib_number} уже присвоен другому участнику.")
+            await message.answer(f"❌ Номер {bib_number} уже присвоен другому участнику.", reply_markup=create_back_keyboard("admin_menu"))
             return
         participant = get_participant_by_user_id(user_id)
         if participant:
@@ -979,7 +993,7 @@ def register_admin_participant_handlers(dp: Dispatcher, bot: Bot, admin_id: int)
         runners = [p for p in participants if p[4] == "runner" and p[7] is not None]  # role and bib_number
         
         if not runners:
-            await message.answer("❌ Нет бегунов с присвоенными номерами для записи результатов.")
+            await message.answer("❌ Нет бегунов с присвоенными номерами для записи результатов.", reply_markup=create_back_keyboard("admin_menu"))
             return
         
         # Sort runners by bib number for easier management
@@ -1047,7 +1061,7 @@ def register_admin_participant_handlers(dp: Dispatcher, bot: Bot, admin_id: int)
             # Validate result format
             is_valid, error_msg = validate_result_format(result_input)
             if not is_valid:
-                await message.answer(f"❌ {error_msg}\n\nПовторите ввод для <b>{name}</b>:")
+                await message.answer(f"❌ {error_msg}\n\nПовторите ввод для <b>{name}</b>:", reply_markup=create_back_keyboard("admin_menu"))
                 return
             
             results[user_id_p] = result_input

@@ -126,32 +126,6 @@ def validate_participant_limit(limit: int, current_count: int = 0) -> Tuple[bool
     return True, None
 
 
-def validate_bib_number(bib_number: str, existing_bibs: list = None) -> Tuple[bool, Optional[str]]:
-    """
-    Validate bib number with uniqueness check.
-    
-    Args:
-        bib_number: Proposed bib number (as string to preserve leading zeros)
-        existing_bibs: List of already assigned bib numbers
-        
-    Returns:
-        Tuple[bool, Optional[str]]: (is_valid, error_message)
-    """
-    if not bib_number.isdigit():
-        return False, "Номер должен содержать только цифры."
-    
-    bib_int = int(bib_number)
-    if bib_int < 1:
-        return False, "Номер должен быть больше 0."
-    
-    if bib_int > 9999:
-        return False, "Номер не может быть больше 9999."
-    
-    if existing_bibs and bib_number in existing_bibs:
-        return False, f"Номер {bib_number} уже занят."
-    
-    return True, None
-
 
 def validate_user_id(user_id: str) -> Tuple[bool, Optional[str]]:
     """
@@ -228,45 +202,3 @@ def validate_result_format(result: str) -> Tuple[bool, Optional[str]]:
         return True, None
     else:
         return False, "Неверный формат времени. Используйте формат ММ:СС (например, 7:30)."
-
-
-def validate_phone_number(phone: str) -> Tuple[bool, Optional[str]]:
-    """
-    Validate phone number format (optional feature for future use).
-    
-    Returns:
-        Tuple[bool, Optional[str]]: (is_valid, error_message)
-    """
-    if not phone:
-        return False, "Номер телефона не может быть пустым."
-    
-    phone = re.sub(r'[^\d+]', '', phone)  # Remove all non-digit characters except +
-    
-    # Russian phone number patterns
-    patterns = [
-        r'^\+7\d{10}$',      # +7xxxxxxxxxx
-        r'^8\d{10}$',        # 8xxxxxxxxxx
-        r'^7\d{10}$',        # 7xxxxxxxxxx
-    ]
-    
-    for pattern in patterns:
-        if re.match(pattern, phone):
-            return True, None
-    
-    return False, "Неверный формат номера телефона. Используйте формат +7XXXXXXXXXX или 8XXXXXXXXXX."
-
-
-def validate_message_length(message: str, max_length: int = 4000) -> Tuple[bool, Optional[str]]:
-    """
-    Validate message length for Telegram limits.
-    
-    Returns:
-        Tuple[bool, Optional[str]]: (is_valid, error_message)
-    """
-    if not message:
-        return False, "Сообщение не может быть пустым."
-    
-    if len(message) > max_length:
-        return False, f"Сообщение не может быть длиннее {max_length} символов."
-    
-    return True, None

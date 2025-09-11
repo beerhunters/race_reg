@@ -11,6 +11,7 @@ from .utils import (
     create_gender_keyboard,
     create_edit_confirmation_keyboard,
     create_admin_edit_approval_keyboard,
+    create_main_menu_keyboard,
 )
 from .validation import validate_name, validate_time_format, sanitize_input
 from database import (
@@ -43,7 +44,7 @@ async def handle_edit_profile_command(message: Message, state: FSMContext):
     participant = get_participant_by_user_id(user_id)
     
     if not participant:
-        await message.answer(messages["edit_profile_not_registered"])
+        await message.answer(messages["edit_profile_not_registered"], reply_markup=create_main_menu_keyboard())
         return
     
     # participant tuple: (user_id, username, name, target_time, role, reg_date, payment_status, bib_number, result, gender, category, cluster)
@@ -123,7 +124,7 @@ async def handle_new_name_input(message: Message, state: FSMContext):
     
     is_valid, error_message = validate_name(new_name)
     if not is_valid:
-        await message.answer(f"❌ {error_message}")
+        await message.answer(f"❌ {error_message}", reply_markup=create_main_menu_keyboard())
         return
     
     data = await state.get_data()
@@ -131,7 +132,7 @@ async def handle_new_name_input(message: Message, state: FSMContext):
     old_name = participant[2]
     
     if new_name == old_name:
-        await message.answer(messages["edit_same_value"])
+        await message.answer(messages["edit_same_value"], reply_markup=create_main_menu_keyboard())
         await state.clear()
         return
     
@@ -159,7 +160,7 @@ async def handle_new_target_time_input(message: Message, state: FSMContext):
     
     is_valid, error_message = validate_time_format(new_time)
     if not is_valid:
-        await message.answer(f"❌ {error_message}")
+        await message.answer(f"❌ {error_message}", reply_markup=create_main_menu_keyboard())
         return
     
     data = await state.get_data()
@@ -167,7 +168,7 @@ async def handle_new_target_time_input(message: Message, state: FSMContext):
     old_time = participant[3] or "Не указано"
     
     if new_time == old_time:
-        await message.answer(messages["edit_same_value"])
+        await message.answer(messages["edit_same_value"], reply_markup=create_main_menu_keyboard())
         await state.clear()
         return
     

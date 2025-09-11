@@ -7,7 +7,7 @@ from aiogram.types import Message, CallbackQuery
 from aiogram.exceptions import TelegramBadRequest, TelegramForbiddenError
 from pytz import timezone
 
-from .utils import logger, messages, RegistrationForm
+from .utils import logger, messages, RegistrationForm, create_back_keyboard, log
 from .validation import validate_participant_limit, sanitize_input
 from database import (
     get_setting,
@@ -19,14 +19,14 @@ from database import (
 
 
 def register_settings_handlers(dp: Dispatcher, bot: Bot, admin_id: int):
-    logger.info("Регистрация обработчиков настроек")
+    log.handler_registration("settings_handlers")
 
     async def edit_runners(event: [Message, CallbackQuery], state: FSMContext):
         user_id = event.from_user.id
         if user_id != admin_id:
             await event.answer("❌ Доступ запрещен")
             return
-        logger.info(f"Команда изменения лимита участников от user_id={user_id}")
+        log.admin_action("edit_runners_limit", user_id)
         
         if isinstance(event, CallbackQuery):
             await event.message.delete()
@@ -40,11 +40,21 @@ def register_settings_handlers(dp: Dispatcher, bot: Bot, admin_id: int):
         current_runners = get_participant_count_by_role("runner")
         current_max = get_setting("max_runners")
         
+        # Ensure we have valid integers for calculation
+        try:
+            current_max = int(current_max) if current_max is not None else 0
+            current_runners = int(current_runners) if current_runners is not None else 0
+        except (ValueError, TypeError):
+            current_max = 0
+            current_runners = 0
+        
+        available_slots = max(0, current_max - current_runners)
+        
         text = "🔢 <b>Изменить лимит участников</b>\n\n"
         text += f"📊 <b>Текущая статистика:</b>\n"
         text += f"• Лимит бегунов: {current_max}\n"
         text += f"• Зарегистрировано: {current_runners}\n"
-        text += f"• Свободных мест: {current_max - current_runners}\n\n"
+        text += f"• Свободных мест: {available_slots}\n\n"
         
         # Check waitlist
         waitlist_data = []
@@ -72,14 +82,14 @@ def register_settings_handlers(dp: Dispatcher, bot: Bot, admin_id: int):
         try:
             new_max_runners = int(user_input)
         except ValueError:
-            await message.answer("❌ Лимит должен быть числом.")
+            await message.answer("❌ Лимит должен быть числом.", reply_markup=create_back_keyboard("admin_menu"))
             return
         
         current_runners = get_participant_count_by_role("runner")
         is_valid, error_message = validate_participant_limit(new_max_runners, current_runners)
         
         if not is_valid:
-            await message.answer(f"❌ {error_message}")
+            await message.answer(f"❌ {error_message}", reply_markup=create_back_keyboard("admin_menu"))
             return
         
         old_max_runners = get_setting("max_runners")
@@ -87,14 +97,25 @@ def register_settings_handlers(dp: Dispatcher, bot: Bot, admin_id: int):
             logger.error("Не найдена настройка max_runners в базе данных")
             await message.answer("Ошибка конфигурации. Свяжитесь с администратором.")
             return
+        
+        # Ensure old_max_runners is a valid integer
+        try:
+            old_max_runners = int(old_max_runners)
+        except (ValueError, TypeError):
+            logger.error(f"Некорректное значение max_runners: {old_max_runners}")
+            await message.answer("Ошибка конфигурации. Свяжитесь с администратором.")
+            return
+            
         success = set_setting("max_runners", new_max_runners)
         if success:
+            available_slots = max(0, new_max_runners - current_runners)
+            
             text = "✅ <b>Лимит участников изменён</b>\n\n"
             text += f"📊 <b>Изменения:</b>\n"
             text += f"• Старый лимит: {old_max_runners}\n"
             text += f"• Новый лимит: {new_max_runners}\n"
             text += f"• Зарегистрировано: {current_runners}\n"
-            text += f"• Свободных мест: {new_max_runners - current_runners}\n"
+            text += f"• Свободных мест: {available_slots}\n"
             
             if new_max_runners > old_max_runners:
                 added_slots = new_max_runners - old_max_runners
@@ -124,11 +145,11 @@ def register_settings_handlers(dp: Dispatcher, bot: Bot, admin_id: int):
                 text += "\n💡 Лимит остался прежним."
                 await message.answer(text)
                 
-            logger.info(f"Лимит бегунов изменен с {old_max_runners} на {new_max_runners}")
+            log.admin_action("runners_limit_changed", admin_id, f"from {old_max_runners} to {new_max_runners}")
                 
         else:
-            logger.error("Ошибка при обновлении настройки max_runners")
-            await message.answer("❌ Ошибка при изменении лимита участников. Попробуйте снова.")
+            log.database_operation("UPDATE", "settings", success=False, details="max_runners setting update failed")
+            await message.answer("❌ Ошибка при изменении лимита участников. Попробуйте снова.", reply_markup=create_back_keyboard("admin_menu"))
             
         await state.clear()
 
@@ -329,4 +350,4 @@ def register_settings_handlers(dp: Dispatcher, bot: Bot, admin_id: int):
         
         await state.clear()
 
-    logger.info("Обработчики настроек зарегистрированы")
+    log.handler_registration("settings_handlers completed")

@@ -30,7 +30,9 @@ from .utils import (
     config,
     RegistrationForm,
     create_gender_keyboard,
+    create_main_menu_keyboard,
     get_participation_fee_text,
+    log,
 )
 from .validation import validate_name, validate_time_format, sanitize_input
 from database import (
@@ -77,11 +79,11 @@ def create_start_registration_keyboard():
 async def handle_start_command(message: Message, state: FSMContext, bot: Bot, admin_id: int):
     """Обработчик команды /start"""
     user_id = message.from_user.id
-    logger.info(f"Команда /start от user_id={user_id}")
+    log.command_received("/start", user_id, message.from_user.username)
     
     # Проверка, является ли пользователь администратором
     if user_id == admin_id:
-        logger.info(f"Пользователь user_id={user_id} является администратором")
+        log.admin_action("start_command_accessed", user_id)
         try:
             from .utils import create_admin_commands_keyboard
             await message.answer(
@@ -89,7 +91,7 @@ async def handle_start_command(message: Message, state: FSMContext, bot: Bot, ad
                 reply_markup=create_admin_commands_keyboard(),
             )
         except Exception as e:
-            logger.error(f"Ошибка при отправке admin_commands: {e}")
+            log.notification_sent("admin_commands", user_id, False, str(e))
             await message.answer("🔧 Админ-панель")
         await state.clear()
         return
@@ -198,7 +200,16 @@ async def handle_start_command(message: Message, state: FSMContext, bot: Bot, ad
             # Проверяем, есть ли свободные слоты
             max_runners = get_setting("max_runners")
             current_runners = get_participant_count_by_role("runner")
-            available_slots = max_runners - current_runners if max_runners else 0
+            
+            # Ensure we have valid integers for calculation
+            try:
+                max_runners = int(max_runners) if max_runners is not None else 0
+                current_runners = int(current_runners) if current_runners is not None else 0
+            except (ValueError, TypeError):
+                max_runners = 0
+                current_runners = 0
+            
+            available_slots = max_runners - current_runners if max_runners > 0 else 0
             
             if available_slots > 0:
                 # Есть свободные места - предлагаем принять участие
@@ -266,7 +277,7 @@ async def handle_name_input(message: Message, state: FSMContext):
     
     is_valid, error_message = validate_name(name)
     if not is_valid:
-        await message.answer(f"❌ {error_message}")
+        await message.answer(f"❌ {error_message}", reply_markup=create_main_menu_keyboard())
         return
     
     await state.update_data(name=name, role="runner")
@@ -284,7 +295,7 @@ async def handle_time_input(message: Message, state: FSMContext):
     
     is_valid, error_message = validate_time_format(target_time)
     if not is_valid:
-        await message.answer(f"❌ {error_message}")
+        await message.answer(f"❌ {error_message}", reply_markup=create_main_menu_keyboard())
         return
     
     await state.update_data(target_time=target_time)
@@ -322,6 +333,18 @@ async def handle_gender_selection(callback: CallbackQuery, state: FSMContext, bo
         return
     
     current_runners = get_participant_count_by_role("runner")
+    
+    # Ensure we have valid integers for comparison
+    try:
+        max_runners = int(max_runners)
+        current_runners = int(current_runners) if current_runners is not None else 0
+    except (ValueError, TypeError):
+        await callback.message.edit_text(
+            "❌ Ошибка конфигурации. Свяжитесь с администратором."
+        )
+        await callback.answer()
+        await state.clear()
+        return
     
     if current_runners >= max_runners:
         # Добавляем в очередь ожидания
@@ -463,6 +486,28 @@ def register_simple_registration_handlers(dp: Dispatcher, bot: Bot, admin_id: in
     dp.callback_query.register(
         gender_wrapper,
         StateFilter(RegistrationForm.waiting_for_gender)
+    )
+    
+    # Главное меню для пользователей
+    async def handle_user_main_menu(callback: CallbackQuery, state: FSMContext):
+        """Handle main menu button for regular users - same as /start"""
+        # If it's admin, redirect to admin panel
+        if callback.from_user.id == admin_id:
+            from .utils import create_admin_commands_keyboard
+            await callback.message.edit_text(
+                "🔧 <b>Админ-панель</b>\n\nВыберите категорию:",
+                reply_markup=create_admin_commands_keyboard(),
+            )
+            await callback.answer()
+            return
+            
+        await state.clear()
+        await handle_start_command(callback.message, state, bot, admin_id)
+        await callback.answer()
+    
+    dp.callback_query.register(
+        handle_user_main_menu,
+        F.data == "main_menu"
     )
     
     logger.info("Упрощённые обработчики регистрации зарегистрированы")

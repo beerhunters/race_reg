@@ -80,7 +80,16 @@ async def handle_waitlist_status_command(message: Message):
     # Проверяем доступность мест
     max_runners = get_setting("max_runners")
     current_runners = get_participant_count_by_role("runner")
-    available_slots = max_runners - current_runners if max_runners else 0
+    
+    # Ensure we have valid integers for calculation
+    try:
+        max_runners = int(max_runners) if max_runners is not None else 0
+        current_runners = int(current_runners) if current_runners is not None else 0
+    except (ValueError, TypeError):
+        max_runners = 0
+        current_runners = 0
+    
+    available_slots = max_runners - current_runners if max_runners > 0 else 0
     
     # Если пользователь в очереди ожидания
     if is_user_in_waitlist(user_id):
@@ -334,7 +343,18 @@ async def check_and_process_waitlist(bot: Bot, admin_id: int, role: str):
     
     if max_count is None:
         logger.error(f"Не найдена настройка max_{role}s")
-        return
+        return 0
+    
+    # Ensure max_count is a valid integer
+    try:
+        max_count = int(max_count)
+    except (ValueError, TypeError):
+        logger.error(f"Некорректное значение max_{role}s: {max_count}")
+        return 0
+    
+    # Ensure current_count is a valid integer
+    if current_count is None:
+        current_count = 0
     
     available_slots = max_count - current_count
     
@@ -360,6 +380,10 @@ async def check_and_process_waitlist(bot: Bot, admin_id: int, role: str):
                 await bot.send_message(admin_id, admin_text)
             except Exception as e:
                 logger.error(f"Ошибка при уведомлении администратора об отправке уведомлений: {e}")
+            
+            return len(notified_users)
+    
+    return 0
 
 
 def register_waitlist_handlers(dp: Dispatcher, bot: Bot, admin_id: int):

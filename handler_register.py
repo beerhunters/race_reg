@@ -10,11 +10,11 @@ from handlers.waitlist_handlers import register_waitlist_handlers
 from handlers.archive_handlers import register_archive_handlers
 from handlers.cluster_handlers import register_cluster_handlers
 from handlers.backup_handlers import register_backup_handlers
-from handlers.utils import logger
+from handlers.utils import logger, log
 
 
 def register_all_handlers(dp: Dispatcher, bot: Bot, admin_id: int):
-    logger.info("Регистрация всех обработчиков")
+    log.system_event("Handler registration started")
     register_simple_registration_handlers(dp, bot, admin_id)
     register_admin_participant_handlers(dp, bot, admin_id)
     register_notification_handlers(dp, bot, admin_id)
@@ -26,4 +26,4 @@ def register_all_handlers(dp: Dispatcher, bot: Bot, admin_id: int):
     register_cluster_handlers(dp, bot, admin_id)
     register_backup_handlers(dp, bot, admin_id)
     register_misc_handlers(dp, bot, admin_id)
-    logger.info("Все обработчики успешно зарегистрированы")
+    log.system_event("All handlers registered successfully")

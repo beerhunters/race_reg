@@ -6,7 +6,8 @@ from .utils import (
     logger, RegistrationForm,
     create_clusters_category_keyboard,
     create_category_selection_keyboard,
-    create_cluster_selection_keyboard
+    create_cluster_selection_keyboard,
+    create_back_keyboard,
 )
 from database import (
     get_participants_by_role,
@@ -55,7 +56,7 @@ def register_cluster_handlers(dp: Dispatcher, bot: Bot, admin_id: int):
         participants = get_participants_by_role("runner")
         
         if not participants:
-            await callback_query.answer("❌ Нет участников для назначения категорий")
+            await callback_query.message.answer("❌ Нет участников для назначения категорий", reply_markup=create_back_keyboard("admin_menu"))
             return
         
         # Store participants list in state data
@@ -83,7 +84,7 @@ def register_cluster_handlers(dp: Dispatcher, bot: Bot, admin_id: int):
         participants = get_participants_by_role("runner")
         
         if not participants:
-            await callback_query.answer("❌ Нет участников для назначения кластеров")
+            await callback_query.message.answer("❌ Нет участников для назначения кластеров", reply_markup=create_back_keyboard("admin_menu"))
             return
         
         # Store participants list in state data

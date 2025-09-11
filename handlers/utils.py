@@ -48,6 +48,82 @@ logging.basicConfig(
 )
 logger = logging.getLogger(__name__)
 
+
+# Стандартизированные функции логирования
+class LogHelper:
+    """Helper class for standardized logging patterns"""
+    
+    @staticmethod
+    def command_received(command: str, user_id: int, username: str = None):
+        """Log when a command is received"""
+        user_info = f"@{username}" if username else f"ID:{user_id}"
+        logger.info(f"Command '{command}' received from user {user_info}")
+    
+    @staticmethod
+    def admin_action(action: str, admin_id: int, details: str = None):
+        """Log admin actions"""
+        msg = f"Admin action: {action} (admin_id={admin_id})"
+        if details:
+            msg += f" - {details}"
+        logger.info(msg)
+    
+    @staticmethod
+    def database_operation(operation: str, table: str, user_id: int = None, success: bool = True, details: str = None):
+        """Log database operations"""
+        status = "SUCCESS" if success else "FAILED"
+        msg = f"DB {operation} on {table}: {status}"
+        if user_id:
+            msg += f" (user_id={user_id})"
+        if details:
+            msg += f" - {details}"
+        
+        if success:
+            logger.info(msg)
+        else:
+            logger.error(msg)
+    
+    @staticmethod
+    def user_registration(user_id: int, username: str, name: str, role: str, success: bool = True):
+        """Log user registration attempts"""
+        user_info = f"{name} (@{username}, ID:{user_id})"
+        if success:
+            logger.info(f"User registration SUCCESS: {user_info} as {role}")
+        else:
+            logger.error(f"User registration FAILED: {user_info} as {role}")
+    
+    @staticmethod
+    def notification_sent(notification_type: str, user_id: int, success: bool = True, error: str = None):
+        """Log notification sending"""
+        if success:
+            logger.info(f"Notification sent: {notification_type} to user_id={user_id}")
+        else:
+            logger.error(f"Notification failed: {notification_type} to user_id={user_id} - {error}")
+    
+    @staticmethod
+    def system_event(event: str, details: str = None):
+        """Log system-level events"""
+        msg = f"System event: {event}"
+        if details:
+            msg += f" - {details}"
+        logger.info(msg)
+    
+    @staticmethod
+    def validation_error(field: str, value: str, error: str, user_id: int = None):
+        """Log validation errors"""
+        msg = f"Validation error for {field}='{value}': {error}"
+        if user_id:
+            msg += f" (user_id={user_id})"
+        logger.warning(msg)
+    
+    @staticmethod
+    def handler_registration(handler_name: str):
+        """Log handler registration"""
+        logger.info(f"Handler registered: {handler_name}")
+
+
+# Создаем глобальный экземпляр для удобства использования
+log = LogHelper()
+
 try:
     with open("messages.json", "r", encoding="utf-8") as f:
         messages = json.load(f)
@@ -513,6 +589,30 @@ def create_bib_notification_confirmation_keyboard():
             [
                 InlineKeyboardButton(text="✅ Да, отправить", callback_data="confirm_bib_notify"),
                 InlineKeyboardButton(text="❌ Нет, позже", callback_data="cancel_bib_notify"),
+            ],
+        ]
+    )
+    return keyboard
+
+
+def create_main_menu_keyboard():
+    """Create a simple main menu button to return to start"""
+    keyboard = InlineKeyboardMarkup(
+        inline_keyboard=[
+            [
+                InlineKeyboardButton(text="🏠 Главное меню", callback_data="main_menu"),
+            ],
+        ]
+    )
+    return keyboard
+
+
+def create_back_keyboard(callback_data: str = "back"):
+    """Create a simple back button"""
+    keyboard = InlineKeyboardMarkup(
+        inline_keyboard=[
+            [
+                InlineKeyboardButton(text="⬅️ Назад", callback_data=callback_data),
             ],
         ]
     )

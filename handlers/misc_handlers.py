@@ -1,6 +1,6 @@
 from aiogram import Dispatcher, Bot
 from aiogram.types import Message
-from .utils import logger, messages
+from .utils import logger, messages, create_main_menu_keyboard
 
 
 def register_misc_handlers(dp: Dispatcher, bot: Bot, admin_id: int):
@@ -11,4 +11,4 @@ def register_misc_handlers(dp: Dispatcher, bot: Bot, admin_id: int):
         logger.info(
             f"Неизвестная команда от user_id={message.from_user.id}: {message.text}"
         )
-        await message.answer(messages["invalid_command"])
+        await message.answer(messages["invalid_command"], reply_markup=create_main_menu_keyboard())
