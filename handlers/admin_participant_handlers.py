@@ -42,6 +42,7 @@ from database import (
     set_bib_number,
     delete_participant,
     delete_pending_registration,
+    cleanup_blocked_user,
     get_race_data,
     get_past_races,
     save_race_to_db,
@@ -568,11 +569,7 @@ def register_admin_participant_handlers(dp: Dispatcher, bot: Bot, admin_id: int)
                 )
             except TelegramForbiddenError:
                 logger.warning(f"Пользователь user_id={user_id} заблокировал бот")
-                delete_participant(user_id)
-                delete_pending_registration(user_id)
-                logger.info(
-                    f"Пользователь user_id={user_id} удалён из таблиц participants и pending_registrations"
-                )
+                cleanup_blocked_user(user_id)
                 try:
                     await bot.send_message(
                         chat_id=admin_id,
@@ -675,11 +672,7 @@ def register_admin_participant_handlers(dp: Dispatcher, bot: Bot, admin_id: int)
                     )
                 except TelegramForbiddenError:
                     logger.warning(f"Пользователь user_id={user_id} заблокировал бот")
-                    delete_participant(user_id)
-                    delete_pending_registration(user_id)
-                    logger.info(
-                        f"Пользователь user_id={user_id} удалён из таблиц participants и pending_registrations"
-                    )
+                    cleanup_blocked_user(user_id)
                     try:
                         await bot.send_message(
                             chat_id=admin_id,
@@ -765,11 +758,7 @@ def register_admin_participant_handlers(dp: Dispatcher, bot: Bot, admin_id: int)
                     )
                 except TelegramForbiddenError:
                     logger.warning(f"Пользователь user_id={user_id} заблокировал бот")
-                    delete_participant(user_id)
-                    delete_pending_registration(user_id)
-                    logger.info(
-                        f"Пользователь user_id={user_id} удалён из таблиц participants и pending_registrations"
-                    )
+                    cleanup_blocked_user(user_id)
                     try:
                         await bot.send_message(
                             chat_id=admin_id,
@@ -1406,67 +1395,91 @@ def register_admin_participant_handlers(dp: Dispatcher, bot: Bot, admin_id: int)
             )
             await callback_query.answer()
             return
-        participant_list = messages["past_race_header"].format(date=race_date)
-        chunks = []
-        current_chunk = participant_list
-        last_role = None
-        for index, (
-            user_id,
-            username,
-            name,
-            target_time,
-            role,
-            reg_date,
-            payment_status,
-            bib_number,
-            result,
-            gender,
-        ) in enumerate(participants, 1):
-            if role != last_role and role == "volunteer":
-                if len(current_chunk) + len(messages["volunteers_header"]) > 4000:
-                    chunks.append(current_chunk)
-                    current_chunk = (
-                        messages["past_race_header"].format(date=race_date)
-                        + messages["volunteers_header"]
-                    )
-                else:
-                    current_chunk += messages["volunteers_header"]
-            last_role = role
-            formatted_date = format_date_to_moscow(reg_date, '%d.%m.%Y %H:%M MSK')
-            bib_field = f"№{bib_number}" if bib_number is not None else "не присвоен"
-            result_field = result if result is not None else "не указан"
+        
+        # Filter only runners and create list with parsed results for sorting
+        runners = []
+        for (user_id, username, name, target_time, role, reg_date, payment_status, 
+             bib_number, result, gender, category, cluster) in participants:
             if role == "runner":
-                status_emoji = "✅" if payment_status == "paid" else "⏳"
-                participant_info = messages["participant_info"].format(
-                    index=index,
-                    user_id=user_id,
-                    name=name,
-                    target_time=target_time,
-                    role=role,
-                    date=formatted_date,
-                    status=status_emoji,
-                    username=username or "не указан",
-                    bib_number=bib_field,
-                    result=result_field,
-                    gender=gender or "не указан",
-                )
+                # Parse result for sorting (convert time to seconds, DNF goes to end)
+                sort_key = 999999  # Default for DNF or no result
+                if result and result.upper() not in ['DNF', 'НЕ УКАЗАН', 'НЕТ']:
+                    try:
+                        # Parse time format like "0:07:21" or "7:21"
+                        if ':' in result:
+                            time_parts = result.split(':')
+                            if len(time_parts) == 3:  # H:MM:SS
+                                hours, minutes, seconds = map(int, time_parts)
+                                sort_key = hours * 3600 + minutes * 60 + seconds
+                            elif len(time_parts) == 2:  # MM:SS
+                                minutes, seconds = map(int, time_parts)
+                                sort_key = minutes * 60 + seconds
+                    except:
+                        pass  # Keep default DNF sort key
+                
+                runners.append((sort_key, user_id, username, name, target_time, reg_date, 
+                              payment_status, bib_number, result, gender, category, cluster))
+        
+        # Sort by result (faster times first, DNF last)
+        runners.sort(key=lambda x: x[0])
+        
+        # Format output
+        header = f"🏃‍♂️ <b>Результаты гонки {race_date}</b>\n\n"
+        
+        chunks = []
+        current_chunk = header
+        
+        for position, (_, user_id, username, name, target_time, reg_date, 
+                      payment_status, bib_number, result, gender, category, cluster) in enumerate(runners, 1):
+            
+            # Format result display
+            if result and result.upper() not in ['НЕ УКАЗАН', 'НЕТ']:
+                result_display = result
             else:
-                participant_info = messages["participant_info_volunteer"].format(
-                    index=index,
-                    user_id=user_id,
-                    name=name,
-                    date=formatted_date,
-                    username=username or "не указан",
-                )
-            if len(current_chunk) + len(participant_info) > 4000:
+                result_display = "DNF"
+            
+            # Format bib number
+            bib_display = f"№{bib_number}" if bib_number else "—"
+            
+            # Format gender
+            gender_emoji = "👨" if gender == "М" or gender == "male" else "👩" if gender == "Ж" or gender == "female" else "👤"
+            
+            # Format category and cluster
+            category_display = f" ({category})" if category else ""
+            
+            # Create participant line
+            participant_line = (
+                f"{position}. {gender_emoji} <b>{name}</b> — {result_display}\n"
+                f"   {bib_display} • @{username or 'нет'}{category_display}\n\n"
+            )
+            
+            # Check if we need to split into chunks
+            if len(current_chunk) + len(participant_line) > 4000:
                 chunks.append(current_chunk)
-                current_chunk = messages["past_race_header"].format(date=race_date)
-                if role == "volunteer":
-                    current_chunk += messages["volunteers_header"]
-                else:
-                    current_chunk += messages["runners_header"]
-            current_chunk += participant_info
-        chunks.append(current_chunk)
+                current_chunk = header + participant_line
+            else:
+                current_chunk += participant_line
+        
+        # Add final chunk
+        if current_chunk != header:
+            chunks.append(current_chunk)
+        
+        # Add summary
+        total_runners = len(runners)
+        finished_runners = len([r for r in runners if r[8] and r[8].upper() not in ['DNF', 'НЕ УКАЗАН', 'НЕТ']])
+        
+        summary = f"📊 <b>Итого:</b> {finished_runners}/{total_runners} финишировали"
+        
+        # Add summary to last chunk or create new one
+        if chunks:
+            if len(chunks[-1]) + len(summary) > 4000:
+                chunks.append(f"🏃‍♂️ <b>Результаты гонки {race_date}</b>\n\n{summary}")
+            else:
+                chunks[-1] += f"\n{summary}"
+        else:
+            chunks = [f"🏃‍♂️ <b>Результаты гонки {race_date}</b>\n\nНет участников-бегунов."]
+        
+        # Send all chunks
         for chunk in chunks:
             await callback_query.message.answer(chunk)
         await callback_query.answer()

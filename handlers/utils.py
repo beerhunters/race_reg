@@ -162,6 +162,7 @@ class RegistrationForm(StatesGroup):
     waiting_for_target_time = State()
     waiting_for_gender = State()
     waiting_for_info_message = State()
+    waiting_for_welcome_message = State()
     waiting_for_afisha_image = State()
     waiting_for_sponsor_image = State()
     waiting_for_notify_unpaid_message = State()
@@ -470,6 +471,7 @@ def create_media_category_keyboard():
     """Create media category keyboard"""
     commands = [
         InlineKeyboardButton(text="ℹ️ Обновить информационное сообщение", callback_data="admin_info"),
+        InlineKeyboardButton(text="👋 Обновить приветственное сообщение", callback_data="admin_welcome"),
         InlineKeyboardButton(text="🖼 Создать афишу", callback_data="admin_create_afisha"),
         InlineKeyboardButton(text="🤝 Обновить спонсорское изображение", callback_data="admin_update_sponsor"),
         InlineKeyboardButton(text="🏠 Главное меню", callback_data="main_menu"),

@@ -22,6 +22,7 @@ from database import (
     delete_pending_registration,
     get_participant_count_by_role,
     get_setting,
+    cleanup_blocked_user,
 )
 
 
@@ -330,8 +331,8 @@ async def notify_waitlist_availability(bot: Bot, notified_users: list):
             )
             logger.info(f"Уведомление о доступном месте отправлено пользователю {user_id}")
         except TelegramForbiddenError:
-            logger.warning(f"Пользователь {user_id} заблокировал бот, удаляем из очереди")
-            remove_from_waitlist(user_id)
+            logger.warning(f"Пользователь {user_id} заблокировал бот, удаляем из всех таблиц")
+            cleanup_blocked_user(user_id)
         except Exception as e:
             logger.error(f"Ошибка при отправке уведомления пользователю {user_id}: {e}")
 

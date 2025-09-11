@@ -124,6 +124,22 @@ def init_db():
                 """
             )
             
+            # Create edit_requests table for profile edit requests
+            cursor.execute(
+                """
+                CREATE TABLE IF NOT EXISTS edit_requests (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    user_id INTEGER NOT NULL,
+                    field TEXT NOT NULL,
+                    old_value TEXT,
+                    new_value TEXT NOT NULL,
+                    request_date TEXT NOT NULL,
+                    status TEXT DEFAULT 'pending',
+                    FOREIGN KEY (user_id) REFERENCES participants (user_id)
+                )
+                """
+            )
+            
             conn.commit()
             logger.info("База данных инициализирована")
     except sqlite3.Error as e:
@@ -471,15 +487,17 @@ def save_race_to_db(race_date: str) -> bool:
                 name TEXT,
                 target_time TEXT,
                 role TEXT,
-                registration_date TEXT,
+                reg_date TEXT,
                 payment_status TEXT,
                 bib_number TEXT,
                 result TEXT,
-                gender TEXT
+                gender TEXT,
+                category TEXT,
+                cluster TEXT
             )
         """
         )
-        cursor.execute(f"INSERT INTO {table_name} SELECT * FROM participants")
+        cursor.execute(f"INSERT INTO {table_name} SELECT user_id, username, name, target_time, role, reg_date, payment_status, bib_number, result, gender, category, cluster FROM participants")
         conn.commit()
         conn.close()
         logger.info(
@@ -508,25 +526,69 @@ def get_past_races():
     cursor.execute(
         "SELECT name FROM sqlite_master WHERE type='table' AND name LIKE 'race_%'"
     )
-    races = [row[0].replace("race_", "").replace("_", ".") for row in cursor.fetchall()]
+    race_tables = [row[0] for row in cursor.fetchall()]
     conn.close()
+    
+    races = []
+    for table_name in race_tables:
+        # Remove 'race_' prefix and replace underscores with dots
+        date_part = table_name.replace("race_", "").replace("_", ".")
+        
+        # Handle different date formats that might exist in the database
+        try:
+            # Try to parse as DD.MM.YYYY format first
+            datetime.strptime(date_part, "%d.%m.%Y")
+            races.append(date_part)
+        except ValueError:
+            try:
+                # Try to parse as YYYY.MM.DD format and convert to DD.MM.YYYY
+                date_obj = datetime.strptime(date_part, "%Y.%m.%d")
+                races.append(date_obj.strftime("%d.%m.%Y"))
+            except ValueError:
+                # If both formats fail, log the error and skip this table
+                logger.warning(f"Не удалось распарсить дату для таблицы {table_name}: {date_part}")
+                continue
+    
+    # Sort by date in descending order (newest first)
     return sorted(races, key=lambda x: datetime.strptime(x, "%d.%m.%Y"), reverse=True)
 
 
 def get_race_data(race_date: str):
     try:
         date_obj = datetime.strptime(race_date, "%d.%m.%Y")
-        table_name = f"race_{date_obj.strftime('%d_%m_%Y')}"
+        
+        # Try both possible table name formats
+        table_name_dd_mm_yyyy = f"race_{date_obj.strftime('%d_%m_%Y')}"
+        table_name_yyyy_mm_dd = f"race_{date_obj.strftime('%Y_%m_%d')}"
+        
         conn = sqlite3.connect(DB_PATH)
         cursor = conn.cursor()
+        
+        # Check which table exists
+        cursor.execute("SELECT name FROM sqlite_master WHERE type='table' AND name = ?", (table_name_dd_mm_yyyy,))
+        if cursor.fetchone():
+            table_name = table_name_dd_mm_yyyy
+        else:
+            cursor.execute("SELECT name FROM sqlite_master WHERE type='table' AND name = ?", (table_name_yyyy_mm_dd,))
+            if cursor.fetchone():
+                table_name = table_name_yyyy_mm_dd
+            else:
+                logger.error(f"Таблица для даты {race_date} не найдена")
+                conn.close()
+                return []
+        
         cursor.execute(
-            f"SELECT user_id, username, name, target_time, role, registration_date, payment_status, bib_number, result, gender, category, cluster FROM {table_name}"
+            f"SELECT user_id, username, name, target_time, role, reg_date, payment_status, bib_number, result, gender, category, cluster FROM {table_name}"
         )
         data = cursor.fetchall()
         conn.close()
         return data
     except ValueError:
         logger.error(f"Некорректный формат даты: {race_date}")
+        return []
+    except Exception as e:
+        logger.error(f"Ошибка при получении данных гонки для {race_date}: {e}")
+        return []
 
 
 def update_participant_field(user_id: int, field: str, value: str) -> bool:
@@ -553,22 +615,6 @@ def create_edit_request(user_id: int, field: str, old_value: str, new_value: str
     try:
         with sqlite3.connect(DB_PATH, timeout=10) as conn:
             cursor = conn.cursor()
-            
-            # Create edit_requests table if it doesn't exist
-            cursor.execute(
-                """
-                CREATE TABLE IF NOT EXISTS edit_requests (
-                    id INTEGER PRIMARY KEY AUTOINCREMENT,
-                    user_id INTEGER NOT NULL,
-                    field TEXT NOT NULL,
-                    old_value TEXT,
-                    new_value TEXT NOT NULL,
-                    request_date TEXT NOT NULL,
-                    status TEXT DEFAULT 'pending',
-                    FOREIGN KEY (user_id) REFERENCES participants (user_id)
-                )
-                """
-            )
             
             cursor.execute(
                 """
@@ -988,10 +1034,18 @@ def get_waitlist_by_user_id(user_id: int) -> tuple:
 # ============================================================================
 
 def archive_race_data(race_date: str) -> bool:
-    """Archive current race data to race_YYYY_MM_DD table and collect all users to bot_users"""
+    """Archive current race data to race_DD_MM_YYYY table and collect all users to bot_users"""
     try:
-        # Format table name with date
-        table_name = f"race_{race_date.replace('-', '_').replace('.', '_').replace('/', '_')}"
+        # Parse date and format table name consistently
+        try:
+            # Try parsing as DD.MM.YYYY first
+            date_obj = datetime.strptime(race_date, "%d.%m.%Y")
+        except ValueError:
+            # Try parsing as YYYY-MM-DD 
+            date_obj = datetime.strptime(race_date, "%Y-%m-%d")
+        
+        # Always create table in DD_MM_YYYY format for consistency
+        table_name = f"race_{date_obj.strftime('%d_%m_%Y')}"
         current_time = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
         
         with sqlite3.connect(DB_PATH, timeout=10) as conn:
@@ -1058,10 +1112,25 @@ def archive_race_data(race_date: str) -> bool:
             cursor.execute("DELETE FROM participants")
             cursor.execute("DELETE FROM pending_registrations") 
             cursor.execute("DELETE FROM waitlist")
-            cursor.execute("DELETE FROM edit_requests")
+            
+            # Clear edit_requests table if it exists
+            cursor.execute("""
+                SELECT name FROM sqlite_master 
+                WHERE type='table' AND name='edit_requests'
+            """)
+            if cursor.fetchone():
+                cursor.execute("DELETE FROM edit_requests")
             
             # Reset auto-increment counters
-            cursor.execute("DELETE FROM sqlite_sequence WHERE name IN ('participants', 'pending_registrations', 'waitlist', 'edit_requests')")
+            cursor.execute("DELETE FROM sqlite_sequence WHERE name IN ('participants', 'pending_registrations', 'waitlist')")
+            
+            # Reset edit_requests counter if table exists  
+            cursor.execute("""
+                SELECT name FROM sqlite_master 
+                WHERE type='table' AND name='edit_requests'
+            """)
+            if cursor.fetchone():
+                cursor.execute("DELETE FROM sqlite_sequence WHERE name = 'edit_requests'")
             
             conn.commit()
             logger.info(f"Архивированы данные гонки в таблицу {table_name} (участники: {participants_count}). Всего пользователей в bot_users: {total_users}")
@@ -1194,6 +1263,74 @@ def is_current_event_active() -> bool:
         
     except (ValueError, Exception) as e:
         logger.error(f"Ошибка при проверке активности события: {e}")
+        return False
+
+
+# ============================================================================
+# BLOCKED USERS CLEANUP FUNCTIONS
+# ============================================================================
+
+def cleanup_blocked_user(user_id: int) -> bool:
+    """
+    Remove blocked user from all database tables
+    This function should be called when TelegramForbiddenError occurs
+    """
+    try:
+        with sqlite3.connect(DB_PATH, timeout=10) as conn:
+            cursor = conn.cursor()
+            
+            # Get user info before deletion for logging
+            cursor.execute("SELECT name, username FROM participants WHERE user_id = ?", (user_id,))
+            participant_data = cursor.fetchone()
+            
+            # Remove from all main tables
+            cursor.execute("DELETE FROM participants WHERE user_id = ?", (user_id,))
+            participants_deleted = cursor.rowcount > 0
+            
+            cursor.execute("DELETE FROM pending_registrations WHERE user_id = ?", (user_id,))
+            pending_deleted = cursor.rowcount > 0
+            
+            cursor.execute("DELETE FROM waitlist WHERE user_id = ?", (user_id,))
+            waitlist_deleted = cursor.rowcount > 0
+            
+            # Check if edit_requests table exists and clean it
+            cursor.execute("""
+                SELECT name FROM sqlite_master 
+                WHERE type='table' AND name='edit_requests'
+            """)
+            if cursor.fetchone():
+                cursor.execute("DELETE FROM edit_requests WHERE user_id = ?", (user_id,))
+                edit_requests_deleted = cursor.rowcount > 0
+            else:
+                edit_requests_deleted = False
+            
+            conn.commit()
+            
+            # Log cleanup results
+            tables_cleaned = []
+            if participants_deleted:
+                tables_cleaned.append("participants")
+            if pending_deleted:
+                tables_cleaned.append("pending_registrations")
+            if waitlist_deleted:
+                tables_cleaned.append("waitlist")
+            if edit_requests_deleted:
+                tables_cleaned.append("edit_requests")
+            
+            if tables_cleaned:
+                name = participant_data[0] if participant_data else "неизвестно"
+                username = participant_data[1] if participant_data else "неизвестно"
+                logger.info(
+                    f"Заблокированный пользователь {name} (@{username}, ID: {user_id}) "
+                    f"удалён из таблиц: {', '.join(tables_cleaned)}"
+                )
+                return True
+            else:
+                logger.info(f"Пользователь {user_id} не найден ни в одной таблице")
+                return False
+                
+    except sqlite3.Error as e:
+        logger.error(f"Ошибка при очистке заблокированного пользователя {user_id}: {e}")
         return False
 
 

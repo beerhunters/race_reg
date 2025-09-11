@@ -18,6 +18,7 @@ from database import (
     get_all_participants,
     get_pending_registrations,
     get_all_bot_users,
+    cleanup_blocked_user,
     delete_participant,
     delete_pending_registration,
     set_result,
@@ -31,7 +32,8 @@ async def get_users_by_audience(audience_type):
         "participants": [],
         "pending": [],
         "waitlist": [],
-        "archives": []
+        "archives": [],
+        "bot_users": []
     }
     
     if audience_type in ["participants", "all"]:
@@ -67,6 +69,30 @@ async def get_users_by_audience(audience_type):
         except Exception as e:
             logger.error(f"Ошибка получения архивных пользователей: {e}")
     
+    # Add bot_users for "all" audience type
+    if audience_type == "all":
+        try:
+            bot_users = get_all_bot_users()
+            
+            # Get all existing user_ids from other categories to avoid duplicates
+            existing_user_ids = set()
+            for category, users in user_lists.items():
+                if category != "bot_users":
+                    existing_user_ids.update([user[0] for user in users])
+            
+            # Add unique bot users
+            unique_bot_users = []
+            for bot_user in bot_users:
+                if len(bot_user) >= 4:
+                    user_id, username, first_name, last_name = bot_user[0], bot_user[1], bot_user[2], bot_user[3]
+                    if user_id not in existing_user_ids:
+                        name = f"{first_name or ''} {last_name or ''}".strip() or "Без имени"
+                        unique_bot_users.append((user_id, username, name))
+            
+            user_lists["bot_users"] = unique_bot_users
+        except Exception as e:
+            logger.error(f"Ошибка получения пользователей из bot_users: {e}")
+    
     return user_lists
 
 
@@ -88,7 +114,8 @@ def get_category_name(category):
         "participants": "Участники",
         "pending": "Pending",
         "waitlist": "Очередь ожидания",
-        "archives": "Архивы"
+        "archives": "Архивы",
+        "bot_users": "Остальные пользователи"
     }
     return names.get(category, category)
 
@@ -141,11 +168,7 @@ def register_notification_handlers(dp: Dispatcher, bot: Bot, admin_id: int):
                 success_count += 1
             except TelegramForbiddenError:
                 logger.warning(f"Пользователь user_id={user_id} заблокировал бот")
-                delete_participant(user_id)
-                delete_pending_registration(user_id)
-                logger.info(
-                    f"Пользователь user_id={user_id} удалён из таблиц participants и pending_registrations"
-                )
+                cleanup_blocked_user(user_id)
                 try:
                     await bot.send_message(
                         chat_id=admin_id,
@@ -328,9 +351,9 @@ def register_notification_handlers(dp: Dispatcher, bot: Bot, admin_id: int):
     @dp.callback_query(F.data == "add_photos_no")
     async def send_text_only_notification(callback: CallbackQuery, state: FSMContext):
         """Send notification with text only"""
+        await callback.answer()  # Отвечаем сразу, чтобы избежать timeout
         await callback.message.delete()
         await send_advanced_notification(callback.message, state, with_photos=False)
-        await callback.answer()
 
     @dp.message(RegistrationForm.waiting_for_notify_advanced_photo, F.photo)
     async def process_notification_photo(message: Message, state: FSMContext):
@@ -393,6 +416,7 @@ def register_notification_handlers(dp: Dispatcher, bot: Bot, admin_id: int):
     @dp.callback_query(F.data == "photos_done")
     async def send_photos_notification(callback: CallbackQuery, state: FSMContext):
         """Send notification with photos"""
+        await callback.answer()  # Отвечаем сразу, чтобы избежать timeout
         await callback.message.delete()
         
         data = await state.get_data()
@@ -401,11 +425,9 @@ def register_notification_handlers(dp: Dispatcher, bot: Bot, admin_id: int):
         if not photos:
             await callback.message.answer("❌ Не загружено ни одного фото. Отменяю отправку.")
             await state.clear()
-            await callback.answer()
             return
             
         await send_advanced_notification(callback.message, state, with_photos=True)
-        await callback.answer()
 
     async def send_advanced_notification(message: Message, state: FSMContext, with_photos=False):
         """Send advanced notification to selected audience"""
@@ -581,11 +603,7 @@ def register_notification_handlers(dp: Dispatcher, bot: Bot, admin_id: int):
                 success_count += 1
             except TelegramForbiddenError:
                 logger.warning(f"Пользователь user_id={user_id} заблокировал бот")
-                delete_participant(user_id)
-                delete_pending_registration(user_id)
-                logger.info(
-                    f"Пользователь user_id={user_id} удалён из таблиц participants и pending_registrations"
-                )
+                cleanup_blocked_user(user_id)
                 try:
                     await bot.send_message(
                         chat_id=admin_id,
