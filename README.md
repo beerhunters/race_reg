@@ -142,8 +142,8 @@ graph TB
 
 ```bash
 # Клонирование репозитория
-git clone https://github.com/yourusername/beer-mile-registration.git
-cd beer-mile-registration
+git clone https://github.com/yourusername/race_reg.git
+cd race_reg
 
 # Создание файла окружения
 cp .env.example .env
