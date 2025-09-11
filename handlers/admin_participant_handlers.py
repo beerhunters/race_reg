@@ -52,20 +52,20 @@ from database import (
 )
 
 
-def format_date_to_moscow(date_str, format_str='%Y-%m-%d %H:%M:%S MSK'):
+def format_date_to_moscow(date_str, format_str="%Y-%m-%d %H:%M:%S MSK"):
     """Convert ISO date string to Moscow time with custom formatting"""
     if not date_str:
         return "—"
     try:
-        if 'T' in date_str:  # ISO format
+        if "T" in date_str:  # ISO format
             # Parse as UTC and convert to Moscow time
-            dt = datetime.fromisoformat(date_str.replace('Z', '+00:00'))
+            dt = datetime.fromisoformat(date_str.replace("Z", "+00:00"))
             utc_timezone = pytz.timezone("UTC")
             moscow_timezone = pytz.timezone("Europe/Moscow")
-            
+
             if dt.tzinfo is None:
                 dt = utc_timezone.localize(dt)
-            
+
             moscow_dt = dt.astimezone(moscow_timezone)
             return moscow_dt.strftime(format_str)
         else:
@@ -182,27 +182,42 @@ def register_admin_participant_handlers(dp: Dispatcher, bot: Bot, admin_id: int)
             await event.answer(messages["set_reg_end_date_access_denied"])
             return
         logger.info(f"Команда /participants от user_id={user_id}")
-        
+
         if isinstance(event, CallbackQuery):
             await event.message.delete()
             message = event.message
         else:
             await event.delete()
             message = event
-            
+
         participants = get_all_participants()
         if not participants:
-            await message.answer("👥 <b>Список участников пуст</b>\n\nНикто еще не зарегистрировался.")
+            await message.answer(
+                "👥 <b>Список участников пуст</b>\n\nНикто еще не зарегистрировался."
+            )
             return
-            
+
         # Build beautiful participant list
         text = "👥 <b>Список участников</b>\n\n"
         runners = []
         volunteers = []
-        
+
         for participant in participants:
-            user_id_p, username, name, target_time, role, reg_date, payment_status, bib_number, result, gender, category, cluster = participant
-            
+            (
+                user_id_p,
+                username,
+                name,
+                target_time,
+                role,
+                reg_date,
+                payment_status,
+                bib_number,
+                result,
+                gender,
+                category,
+                cluster,
+            ) = participant
+
             # Format payment status
             if role == "runner":
                 payment_emoji = "✅" if payment_status == "paid" else "❌"
@@ -210,34 +225,34 @@ def register_admin_participant_handlers(dp: Dispatcher, bot: Bot, admin_id: int)
                 payment_info = f"{payment_emoji} {payment_text}"
             else:
                 payment_info = "—"
-            
+
             # Format bib number
             bib_info = f"№{bib_number}" if bib_number else "—"
-            
+
             # Format username
             username_info = f"@{username}" if username else "—"
-            
+
             # Format target time
             time_info = target_time if target_time else "—"
-            
+
             # Format category and cluster
             category_info = ""
             if category:
                 category_emoji = {
                     "Элита": "🥇",
-                    "Классика": "🏃", 
+                    "Классика": "🏃",
                     "Женский": "👩",
-                    "Команда": "👥"
+                    "Команда": "👥",
                 }.get(category, "📂")
                 category_info += f"📂 Категория: {category_emoji} {category}\n"
-            
+
             cluster_info = ""
             if cluster:
-                cluster_emoji = {
-                    "A": "🅰️", "B": "🅱️", "C": "🅲", "D": "🅳", "E": "🅴"
-                }.get(cluster, "🎯")
+                cluster_emoji = {"A": "🅰️", "B": "🅱️", "C": "🅲", "D": "🅳", "E": "🅴"}.get(
+                    cluster, "🎯"
+                )
                 cluster_info += f"🎯 Кластер: {cluster_emoji} {cluster}\n"
-            
+
             participant_line = (
                 f"<b>{name}</b>\n"
                 f"🆔 ID: <code>{user_id_p}</code>\n"
@@ -248,24 +263,24 @@ def register_admin_participant_handlers(dp: Dispatcher, bot: Bot, admin_id: int)
                 f"{category_info}"
                 f"{cluster_info}"
             )
-            
+
             if role == "runner":
                 runners.append(participant_line)
             else:
                 volunteers.append(participant_line)
-        
+
         # Add runners section
         if runners:
             text += f"🏃 <b>Бегуны ({len(runners)}):</b>\n\n"
             for i, runner in enumerate(runners, 1):
                 text += f"{i}. {runner}\n"
-        
-        # Add volunteers section  
+
+        # Add volunteers section
         if volunteers:
             text += f"🙌 <b>Волонтёры ({len(volunteers)}):</b>\n\n"
             for i, volunteer in enumerate(volunteers, 1):
                 text += f"{i}. {volunteer}\n"
-        
+
         # Split long messages
         if len(text) > 4000:
             chunks = []
@@ -278,22 +293,24 @@ def register_admin_participant_handlers(dp: Dispatcher, bot: Bot, admin_id: int)
                     else:
                         chunk1 += f"{i}. {runner}\n"
                 chunks.append(chunk1.rstrip())
-            
+
             if volunteers:
                 chunk2 = f"🙌 <b>Волонтёры ({len(volunteers)}):</b>\n\n"
                 for i, volunteer in enumerate(volunteers, 1):
                     if len(chunk2 + f"{i}. {volunteer}\n") > 4000:
                         chunks.append(chunk2.rstrip())
-                        chunk2 = f"🙌 <b>Волонтёры (продолжение):</b>\n\n{i}. {volunteer}\n"
+                        chunk2 = (
+                            f"🙌 <b>Волонтёры (продолжение):</b>\n\n{i}. {volunteer}\n"
+                        )
                     else:
                         chunk2 += f"{i}. {volunteer}\n"
                 chunks.append(chunk2.rstrip())
-            
+
             for chunk in chunks:
                 await message.answer(chunk)
         else:
             await message.answer(text)
-            
+
         if isinstance(event, CallbackQuery):
             await event.answer()
 
@@ -311,51 +328,69 @@ def register_admin_participant_handlers(dp: Dispatcher, bot: Bot, admin_id: int)
             await event.answer(messages["pending_access_denied"])
             return
         logger.info(f"Команда /pending от user_id={user_id}")
-        
+
         if isinstance(event, CallbackQuery):
             await event.message.delete()
             message = event.message
         else:
             await event.delete()
             message = event
-            
+
         # Get counts for pending and waitlist
         pending_users = get_pending_registrations()
-        
+
         # Get waitlist count
         from database import get_waitlist_by_role
+
         waitlist_data = get_waitlist_by_role()
-        
+
         text = "⏳ <b>Незавершенные регистрации</b>\n\n"
-        
+
         # Summary
         text += f"📊 <b>Статистика:</b>\n"
         text += f"• Pending регистрации: {len(pending_users)}\n"
         text += f"• В очереди ожидания: {len(waitlist_data)}\n\n"
-        
+
         # Pending registrations detail
         if pending_users:
             text += f"📋 <b>Pending регистрации ({len(pending_users)}):</b>\n\n"
-            for i, (user_id_p, username, name, target_time, role) in enumerate(pending_users, 1):
+            for i, (user_id_p, username, name, target_time, role) in enumerate(
+                pending_users, 1
+            ):
                 username_info = f"@{username}" if username else "—"
                 name_info = name if name else "—"
                 role_info = "бегун" if role == "runner" else "волонтёр" if role else "—"
-                
+
                 text += (
                     f"{i}. ID: <code>{user_id_p}</code>\n"
                     f"   TG: {username_info}\n"
                     f"   Имя: {name_info}\n"
                     f"   Роль: {role_info}\n\n"
                 )
-        
+
         # Waitlist detail
         if waitlist_data:
             text += f"📋 <b>Очередь ожидания ({len(waitlist_data)}):</b>\n\n"
             for i, entry in enumerate(waitlist_data, 1):
-                _, user_id_w, username_w, name_w, target_time_w, role_w, gender_w, join_date, status = entry
+                (
+                    _,
+                    user_id_w,
+                    username_w,
+                    name_w,
+                    target_time_w,
+                    role_w,
+                    gender_w,
+                    join_date,
+                    status,
+                ) = entry
                 username_info = f"@{username_w}" if username_w else "—"
-                status_info = {"waiting": "⏳ Ожидает", "notified": "🔔 Уведомлен", "confirmed": "✅ Подтвержден", "declined": "❌ Отклонен"}.get(status, status)
-                
+                status_info = {
+                    "waiting": "⏳ Ожидает",
+                    "notified": "🔔 Уведомлен",
+                    "confirmed": "✅ Подтвержден",
+                    "declined": "❌ Отклонен",
+                }.get(status, status)
+
                 text += (
                     f"{i}. <b>{name_w}</b>\n"
                     f"   ID: <code>{user_id_w}</code>\n"
@@ -363,45 +398,68 @@ def register_admin_participant_handlers(dp: Dispatcher, bot: Bot, admin_id: int)
                     f"   Статус: {status_info}\n"
                     f"   Дата: {join_date[:10] if join_date else '—'}\n\n"
                 )
-        
+
         if not pending_users and not waitlist_data:
             text += "✅ Все регистрации завершены, очередь ожидания пуста."
-        
+
         # Split if too long
         if len(text) > 4000:
             chunks = []
             current = f"⏳ <b>Незавершенные регистрации</b>\n\n📊 <b>Статистика:</b>\n• Pending регистрации: {len(pending_users)}\n• В очереди ожидания: {len(waitlist_data)}\n\n"
-            
+
             if pending_users:
-                pending_part = f"📋 <b>Pending регистрации ({len(pending_users)}):</b>\n\n"
-                for i, (user_id_p, username, name, target_time, role) in enumerate(pending_users, 1):
+                pending_part = (
+                    f"📋 <b>Pending регистрации ({len(pending_users)}):</b>\n\n"
+                )
+                for i, (user_id_p, username, name, target_time, role) in enumerate(
+                    pending_users, 1
+                ):
                     username_info = f"@{username}" if username else "—"
-                    name_info = name if name else "—" 
-                    role_info = "бегун" if role == "runner" else "волонтёр" if role else "—"
-                    
+                    name_info = name if name else "—"
+                    role_info = (
+                        "бегун" if role == "runner" else "волонтёр" if role else "—"
+                    )
+
                     entry = (
                         f"{i}. ID: <code>{user_id_p}</code>\n"
                         f"   TG: {username_info}\n"
                         f"   Имя: {name_info}\n"
                         f"   Роль: {role_info}\n\n"
                     )
-                    
+
                     if len(current + pending_part + entry) > 4000:
                         chunks.append(current + pending_part.rstrip())
                         current = ""
                         pending_part = f"📋 <b>Pending (продолжение):</b>\n\n{entry}"
                     else:
                         pending_part += entry
-                
+
                 current += pending_part
-            
+
             if waitlist_data:
-                waitlist_part = f"📋 <b>Очередь ожидания ({len(waitlist_data)}):</b>\n\n"
+                waitlist_part = (
+                    f"📋 <b>Очередь ожидания ({len(waitlist_data)}):</b>\n\n"
+                )
                 for i, entry in enumerate(waitlist_data, 1):
-                    _, user_id_w, username_w, name_w, target_time_w, role_w, gender_w, join_date, status = entry
+                    (
+                        _,
+                        user_id_w,
+                        username_w,
+                        name_w,
+                        target_time_w,
+                        role_w,
+                        gender_w,
+                        join_date,
+                        status,
+                    ) = entry
                     username_info = f"@{username_w}" if username_w else "—"
-                    status_info = {"waiting": "⏳ Ожидает", "notified": "🔔 Уведомлен", "confirmed": "✅ Подтвержден", "declined": "❌ Отклонен"}.get(status, status)
-                    
+                    status_info = {
+                        "waiting": "⏳ Ожидает",
+                        "notified": "🔔 Уведомлен",
+                        "confirmed": "✅ Подтвержден",
+                        "declined": "❌ Отклонен",
+                    }.get(status, status)
+
                     w_entry = (
                         f"{i}. <b>{name_w}</b>\n"
                         f"   ID: <code>{user_id_w}</code>\n"
@@ -409,19 +467,19 @@ def register_admin_participant_handlers(dp: Dispatcher, bot: Bot, admin_id: int)
                         f"   Статус: {status_info}\n"
                         f"   Дата: {join_date[:10] if join_date else '—'}\n\n"
                     )
-                    
+
                     if len(current + waitlist_part + w_entry) > 4000:
                         chunks.append(current + waitlist_part.rstrip())
                         current = ""
                         waitlist_part = f"📋 <b>Очередь (продолжение):</b>\n\n{w_entry}"
                     else:
                         waitlist_part += w_entry
-                
+
                 current += waitlist_part
-            
+
             if current.strip():
                 chunks.append(current.rstrip())
-                
+
             for chunk in chunks:
                 await message.answer(chunk)
         else:
@@ -441,48 +499,57 @@ def register_admin_participant_handlers(dp: Dispatcher, bot: Bot, admin_id: int)
             await event.answer(messages["pending_access_denied"])
             return
         logger.info(f"Команда /stats от user_id={user_id}")
-        
+
         if isinstance(event, CallbackQuery):
             await event.message.delete()
             message = event.message
         else:
             await event.delete()
             message = event
-            
+
         try:
             with sqlite3.connect("/app/data/race_participants.db", timeout=10) as conn:
                 cursor = conn.cursor()
-                
+
                 # Get counts
-                cursor.execute("SELECT COUNT(*) FROM participants WHERE payment_status = 'paid'")
+                cursor.execute(
+                    "SELECT COUNT(*) FROM participants WHERE payment_status = 'paid'"
+                )
                 paid_count = cursor.fetchone()[0]
-                cursor.execute("SELECT COUNT(*) FROM participants WHERE role = 'runner'")
+                cursor.execute(
+                    "SELECT COUNT(*) FROM participants WHERE role = 'runner'"
+                )
                 runner_count = cursor.fetchone()[0]
-                cursor.execute("SELECT COUNT(*) FROM participants WHERE role = 'volunteer'")
+                cursor.execute(
+                    "SELECT COUNT(*) FROM participants WHERE role = 'volunteer'"
+                )
                 volunteer_count = cursor.fetchone()[0]
                 cursor.execute("SELECT COUNT(*) FROM pending_registrations")
                 pending_reg_count = cursor.fetchone()[0]
-                
+
                 # Get settings
                 cursor.execute("SELECT value FROM settings WHERE key = 'max_runners'")
                 max_runners_result = cursor.fetchone()
                 max_runners = int(max_runners_result[0]) if max_runners_result else 0
-                
+
                 cursor.execute("SELECT value FROM settings WHERE key = 'reg_end_date'")
                 reg_end_date_result = cursor.fetchone()
-                reg_end_date = reg_end_date_result[0] if reg_end_date_result else "не установлена"
-                
+                reg_end_date = (
+                    reg_end_date_result[0] if reg_end_date_result else "не установлена"
+                )
+
                 # Get waitlist count
                 from database import get_waitlist_by_role
+
                 waitlist_data = get_waitlist_by_role()
                 waitlist_count = len(waitlist_data)
-                
+
             # Build beautiful statistics message
             text = "📊 <b>Статистика регистрации</b>\n\n"
-            
+
             # Registration deadline
             text += f"📅 <b>Дата окончания регистрации:</b>\n{reg_end_date}\n\n"
-            
+
             # Slots and registration stats
             text += f"🎯 <b>Слоты и регистрация:</b>\n"
             text += f"• Максимум бегунов: {max_runners}\n"
@@ -490,7 +557,7 @@ def register_admin_participant_handlers(dp: Dispatcher, bot: Bot, admin_id: int)
             text += f"• Доступных слотов: {max_runners - runner_count}\n"
             text += f"• Зарегистрировано волонтёров: {volunteer_count}\n"
             text += f"• Всего участников: {runner_count + volunteer_count}\n\n"
-            
+
             # Payment statistics
             text += f"💰 <b>Статистика оплаты:</b>\n"
             text += f"• Оплатили: {paid_count}\n"
@@ -500,25 +567,27 @@ def register_admin_participant_handlers(dp: Dispatcher, bot: Bot, admin_id: int)
                 text += f"• Процент оплаты: {payment_percentage}%\n\n"
             else:
                 text += f"• Процент оплаты: 0%\n\n"
-            
+
             # Queue statistics
             text += f"⏳ <b>Очереди и pending:</b>\n"
             text += f"• Незавершённых регистраций: {pending_reg_count}\n"
             text += f"• В очереди ожидания: {waitlist_count}\n\n"
-            
+
             # Registration status
             if runner_count >= max_runners:
                 text += "🔴 <b>Статус:</b> Регистрация закрыта (достигнут лимит)\n"
             elif waitlist_count > 0:
-                text += "🟡 <b>Статус:</b> Есть очередь ожидания\n" 
+                text += "🟡 <b>Статус:</b> Есть очередь ожидания\n"
             else:
                 text += "🟢 <b>Статус:</b> Регистрация открыта\n"
-                
+
             await message.answer(text)
-            
+
         except sqlite3.Error as e:
             logger.error(f"Ошибка при получении статистики: {e}")
-            await message.answer("❌ Ошибка при получении статистики. Попробуйте снова.")
+            await message.answer(
+                "❌ Ошибка при получении статистики. Попробуйте снова."
+            )
         except Exception as e:
             logger.error(f"Общая ошибка в show_stats: {e}")
             await message.answer("❌ Произошла ошибка при формировании статистики.")
@@ -628,28 +697,37 @@ def register_admin_participant_handlers(dp: Dispatcher, bot: Bot, admin_id: int)
         # Validate user ID
         is_valid, error_message = validate_user_id(parts[0])
         if not is_valid:
-            await message.answer(f"❌ Неверный ID пользователя: {error_message}", reply_markup=create_back_keyboard("admin_menu"))
+            await message.answer(
+                f"❌ Неверный ID пользователя: {error_message}",
+                reply_markup=create_back_keyboard("admin_menu"),
+            )
             return
 
         user_id = int(parts[0])
 
         # Handle bib number - preserve leading zeros as string
         bib_number = parts[1].strip()
-        
+
         # Validate that bib number contains only digits
         if not bib_number.isdigit():
-            await message.answer("❌ Номер должен содержать только цифры.", reply_markup=create_back_keyboard("admin_menu"))
+            await message.answer(
+                "❌ Номер должен содержать только цифры.",
+                reply_markup=create_back_keyboard("admin_menu"),
+            )
             return
-            
-        # Get existing bib numbers to check for duplicates  
+
+        # Get existing bib numbers to check for duplicates
         all_participants = get_all_participants()
         existing_bibs = [
             p[7] for p in all_participants if p[7] is not None
         ]  # bib_number is at index 7
-        
+
         # Check for duplicate bib numbers
         if bib_number in existing_bibs:
-            await message.answer(f"❌ Номер {bib_number} уже присвоен другому участнику.", reply_markup=create_back_keyboard("admin_menu"))
+            await message.answer(
+                f"❌ Номер {bib_number} уже присвоен другому участнику.",
+                reply_markup=create_back_keyboard("admin_menu"),
+            )
             return
         participant = get_participant_by_user_id(user_id)
         if participant:
@@ -804,80 +882,149 @@ def register_admin_participant_handlers(dp: Dispatcher, bot: Bot, admin_id: int)
         else:
             await event.delete()
             message = event
-            
+
         try:
             delimiter = config.get("csv_delimiter", ";")
             output = io.StringIO()
-            
+
             # Use global function for date formatting
-            
+
             # Export all tables to one CSV file
-            writer = csv.writer(output, lineterminator="\n", delimiter=delimiter, quoting=csv.QUOTE_MINIMAL)
-            
+            writer = csv.writer(
+                output,
+                lineterminator="\n",
+                delimiter=delimiter,
+                quoting=csv.QUOTE_MINIMAL,
+            )
+
             # 1. Participants table
             writer.writerow(["=== УЧАСТНИКИ ==="])
-            writer.writerow([
-                "User ID", "Username", "Имя", "Целевое время", "Роль", 
-                "Дата регистрации", "Статус оплаты", "Беговой номер", "Результат", "Пол", "Категория", "Кластер"
-            ])
-            
+            writer.writerow(
+                [
+                    "User ID",
+                    "Username",
+                    "Имя",
+                    "Целевое время",
+                    "Роль",
+                    "Дата регистрации",
+                    "Статус оплаты",
+                    "Беговой номер",
+                    "Результат",
+                    "Пол",
+                    "Категория",
+                    "Кластер",
+                ]
+            )
+
             participants = get_all_participants()
             for participant in participants:
-                user_id_p, username, name, target_time, role, reg_date, payment_status, bib_number, result, gender, category, cluster = participant
-                writer.writerow([
-                    user_id_p, 
-                    username or "—", 
-                    name, 
-                    target_time or "—", 
+                (
+                    user_id_p,
+                    username,
+                    name,
+                    target_time,
                     role,
-                    format_date_to_moscow(reg_date), 
-                    payment_status, 
-                    bib_number or "—", 
-                    result or "—", 
-                    gender or "—",
-                    category or "—",
-                    cluster or "—"
-                ])
-            
+                    reg_date,
+                    payment_status,
+                    bib_number,
+                    result,
+                    gender,
+                    category,
+                    cluster,
+                ) = participant
+                writer.writerow(
+                    [
+                        user_id_p,
+                        username or "—",
+                        name,
+                        target_time or "—",
+                        role,
+                        format_date_to_moscow(reg_date),
+                        payment_status,
+                        bib_number or "—",
+                        result or "—",
+                        gender or "—",
+                        category or "—",
+                        cluster or "—",
+                    ]
+                )
+
             writer.writerow([])  # Empty row separator
-            
+
             # 2. Pending registrations table
             writer.writerow(["=== НЕЗАВЕРШЕННЫЕ РЕГИСТРАЦИИ ==="])
             writer.writerow(["User ID", "Username", "Имя", "Целевое время", "Роль"])
-            
+
             pending_users = get_pending_registrations()
             for pending in pending_users:
                 user_id_p, username, name, target_time, role = pending
-                writer.writerow([
-                    user_id_p, username or "—", name or "—", target_time or "—", role or "—"
-                ])
-            
+                writer.writerow(
+                    [
+                        user_id_p,
+                        username or "—",
+                        name or "—",
+                        target_time or "—",
+                        role or "—",
+                    ]
+                )
+
             writer.writerow([])  # Empty row separator
-            
+
             # 3. Waitlist table
             writer.writerow(["=== ОЧЕРЕДЬ ОЖИДАНИЯ ==="])
-            writer.writerow([
-                "ID", "User ID", "Username", "Имя", "Целевое время", 
-                "Роль", "Пол", "Дата присоединения", "Статус"
-            ])
-            
+            writer.writerow(
+                [
+                    "ID",
+                    "User ID",
+                    "Username",
+                    "Имя",
+                    "Целевое время",
+                    "Роль",
+                    "Пол",
+                    "Дата присоединения",
+                    "Статус",
+                ]
+            )
+
             from database import get_waitlist_by_role
+
             waitlist_data = get_waitlist_by_role()
             for waitlist_entry in waitlist_data:
-                id_w, user_id_w, username_w, name_w, target_time_w, role_w, gender_w, join_date, status = waitlist_entry
-                writer.writerow([
-                    id_w, user_id_w, username_w or "—", name_w or "—", target_time_w or "—",
-                    role_w or "—", gender_w or "—", format_date_to_moscow(join_date), status or "—"
-                ])
-            
+                (
+                    id_w,
+                    user_id_w,
+                    username_w,
+                    name_w,
+                    target_time_w,
+                    role_w,
+                    gender_w,
+                    join_date,
+                    status,
+                ) = waitlist_entry
+                writer.writerow(
+                    [
+                        id_w,
+                        user_id_w,
+                        username_w or "—",
+                        name_w or "—",
+                        target_time_w or "—",
+                        role_w or "—",
+                        gender_w or "—",
+                        format_date_to_moscow(join_date),
+                        status or "—",
+                    ]
+                )
+
             writer.writerow([])  # Empty row separator
-            
+
             # 4. Settings table
             writer.writerow(["=== НАСТРОЙКИ ==="])
             writer.writerow(["Ключ", "Значение"])
-            
+
             try:
-                with sqlite3.connect("/app/data/race_participants.db", timeout=10) as conn:
+                with sqlite3.connect(
+                    "/app/data/race_participants.db", timeout=10
+                ) as conn:
                     cursor = conn.cursor()
                     cursor.execute("SELECT key, value FROM settings")
                     settings = cursor.fetchall()
@@ -886,52 +1033,84 @@ def register_admin_participant_handlers(dp: Dispatcher, bot: Bot, admin_id: int)
             except sqlite3.Error as e:
                 logger.error(f"Ошибка при получении настроек: {e}")
                 writer.writerow(["Ошибка", f"Не удалось получить настройки: {e}"])
-            
+
             writer.writerow([])  # Empty row separator
-            
-            # 5. Bot users table 
+
+            # 5. Bot users table
             writer.writerow(["=== ПОЛЬЗОВАТЕЛИ БОТА ==="])
-            writer.writerow(["User ID", "Username", "Имя", "Фамилия", "Первое взаимодействие", "Последнее взаимодействие"])
-            
+            writer.writerow(
+                [
+                    "User ID",
+                    "Username",
+                    "Имя",
+                    "Фамилия",
+                    "Первое взаимодействие",
+                    "Последнее взаимодействие",
+                ]
+            )
+
             try:
                 from database import get_all_bot_users
+
                 bot_users = get_all_bot_users()
                 for bot_user in bot_users:
                     if len(bot_user) >= 6:
-                        user_id_b, username_b, first_name, last_name, first_interaction, last_interaction = bot_user
+                        (
+                            user_id_b,
+                            username_b,
+                            first_name,
+                            last_name,
+                            first_interaction,
+                            last_interaction,
+                        ) = bot_user
                         # Format dates
                         first_date = format_date_to_moscow(first_interaction)
                         last_date = format_date_to_moscow(last_interaction)
-                        writer.writerow([
-                            user_id_b, 
-                            username_b or "—", 
-                            first_name or "—",
-                            last_name or "—",
-                            first_date,
-                            last_date
-                        ])
+                        writer.writerow(
+                            [
+                                user_id_b,
+                                username_b or "—",
+                                first_name or "—",
+                                last_name or "—",
+                                first_date,
+                                last_date,
+                            ]
+                        )
                     else:
-                        logger.warning(f"Некорректный формат данных пользователя: {bot_user}")
+                        logger.warning(
+                            f"Некорректный формат данных пользователя: {bot_user}"
+                        )
             except Exception as e:
                 logger.error(f"Ошибка при получении пользователей бота: {e}")
-                writer.writerow(["Ошибка", f"Не удалось получить пользователей: {e}", "", "", "", ""])
-            
+                writer.writerow(
+                    [
+                        "Ошибка",
+                        f"Не удалось получить пользователей: {e}",
+                        "",
+                        "",
+                        "",
+                        "",
+                    ]
+                )
+
             csv_content = output.getvalue()
             output.close()
-            
+
             # Generate timestamp for filename (Moscow time)
             moscow_timezone = pytz.timezone("Europe/Moscow")
             moscow_now = datetime.now(moscow_timezone)
             timestamp = moscow_now.strftime("%Y%m%d_%H%M%S")
             filename = f"beer_mile_export_{timestamp}.csv"
-            
-            logger.info(f"CSV-файл сформирован, размер: {len(csv_content)} символов, разделитель: {delimiter}")
-            
+
+            logger.info(
+                f"CSV-файл сформирован, размер: {len(csv_content)} символов, разделитель: {delimiter}"
+            )
+
             csv_bytes = csv_content.encode("utf-8-sig")
             await message.answer_document(
                 document=BufferedInputFile(csv_bytes, filename=filename)
             )
-            
+
             # Statistics message
             stats_text = f"✅ <b>Экспорт завершён</b>\n\n"
             stats_text += f"📊 Экспортировано данных:\n"
@@ -940,17 +1119,22 @@ def register_admin_participant_handlers(dp: Dispatcher, bot: Bot, admin_id: int)
             stats_text += f"• В очереди ожидания: {len(waitlist_data)}\n"
             try:
                 from database import get_all_bot_users
+
                 bot_users = get_all_bot_users()
                 stats_text += f"• Пользователей бота: {len(bot_users)}\n"
             except:
                 stats_text += f"• Пользователей бота: н/д\n"
-            
+
             await message.answer(stats_text)
-            logger.info(f"CSV-файл успешно отправлен для user_id={message.from_user.id}")
-            
+            logger.info(
+                f"CSV-файл успешно отправлен для user_id={message.from_user.id}"
+            )
+
         except Exception as e:
             logger.error(f"Ошибка при экспорте данных: {e}")
-            await message.answer("❌ Произошла ошибка при экспорте данных. Проверьте логи.")
+            await message.answer(
+                "❌ Произошла ошибка при экспорте данных. Проверьте логи."
+            )
 
     @dp.message(Command("export"))
     async def cmd_export_participants(message: Message, state: FSMContext):
@@ -969,199 +1153,242 @@ def register_admin_participant_handlers(dp: Dispatcher, bot: Bot, admin_id: int)
             await event.answer("❌ Доступ запрещен")
             return
         logger.info(f"Команда записи результатов от user_id={user_id}")
-        
+
         if isinstance(event, CallbackQuery):
             await event.message.delete()
             message = event.message
         else:
             await event.delete()
             message = event
-        
+
         # Get all runners with bib numbers
         participants = get_all_participants()
-        runners = [p for p in participants if p[4] == "runner" and p[7] is not None]  # role and bib_number
-        
+        runners = [
+            p for p in participants if p[4] == "runner" and p[7] is not None
+        ]  # role and bib_number
+
         if not runners:
-            await message.answer("❌ Нет бегунов с присвоенными номерами для записи результатов.", reply_markup=create_back_keyboard("admin_menu"))
+            await message.answer(
+                "❌ Нет бегунов с присвоенными номерами для записи результатов.",
+                reply_markup=create_back_keyboard("admin_menu"),
+            )
             return
-        
+
         # Sort runners by bib number for easier management
         runners.sort(key=lambda x: str(x[7]))  # Sort by bib_number as string
-        
+
         # Store data in FSM context
-        await state.update_data(
-            runners=runners,
-            current_index=0,
-            results={}
-        )
-        
+        await state.update_data(runners=runners, current_index=0, results={})
+
         # Show first participant
-        await show_next_participant_for_result(message, state, runners[0], 0, len(runners))
+        await show_next_participant_for_result(
+            message, state, runners[0], 0, len(runners)
+        )
         await state.set_state(RegistrationForm.waiting_for_participant_result)
-        
-    async def show_next_participant_for_result(message: Message, state: FSMContext, participant, index, total):
+
+    async def show_next_participant_for_result(
+        message: Message, state: FSMContext, participant, index, total
+    ):
         """Show current participant for result input"""
-        user_id_p, username, name, target_time, role, reg_date, payment_status, bib_number, result, gender, category, cluster = participant
-        
+        (
+            user_id_p,
+            username,
+            name,
+            target_time,
+            role,
+            reg_date,
+            payment_status,
+            bib_number,
+            result,
+            gender,
+            category,
+            cluster,
+        ) = participant
+
         text = f"📝 <b>Запись результатов</b> ({index + 1}/{total})\n\n"
         text += f"👤 <b>{name}</b>\n"
         text += f"🏷 Номер: {bib_number}\n"
         text += f"🆔 ID: <code>{user_id_p}</code>\n"
         text += f"📱 TG: @{username}" if username else "📱 TG: —"
-        text += f"\n⏰ Целевое время: {target_time}" if target_time else "\n⏰ Целевое время: —"
-        
+        text += (
+            f"\n⏰ Целевое время: {target_time}"
+            if target_time
+            else "\n⏰ Целевое время: —"
+        )
+
         if result:
             text += f"\n🏃 Текущий результат: {result}"
-        
+
         text += f"\n\n💬 Введите результат для <b>{name}</b>:"
         text += f"\n• Формат времени: <code>ММ:СС</code> (например: 08:45)"
         text += f"\n• Или используйте кнопки ниже"
-        
+
         from .utils import create_result_input_keyboard
+
         await message.answer(text, reply_markup=create_result_input_keyboard())
-    
+
     @dp.message(RegistrationForm.waiting_for_participant_result)
     async def process_participant_result(message: Message, state: FSMContext):
         """Process individual participant result"""
         result_input = sanitize_input(message.text, 20).strip()
-        
+
         data = await state.get_data()
-        runners = data.get('runners', [])
-        current_index = data.get('current_index', 0)
-        results = data.get('results', {})
-        
+        runners = data.get("runners", [])
+        current_index = data.get("current_index", 0)
+        results = data.get("results", {})
+
         if current_index >= len(runners):
             await message.answer("❌ Ошибка: индекс участника вышел за границы.")
             await state.clear()
             return
-        
+
         current_participant = runners[current_index]
         user_id_p = current_participant[0]
         name = current_participant[2]
         bib_number = current_participant[7]
-        
+
         # Process result input
-        if result_input.lower() == 'skip':
+        if result_input.lower() == "skip":
             logger.info(f"Пропущен результат для участника {name} (ID: {user_id_p})")
-        elif result_input.upper() == 'DNF':
-            results[user_id_p] = 'DNF'
+        elif result_input.upper() == "DNF":
+            results[user_id_p] = "DNF"
             logger.info(f"Записан DNF для участника {name} (ID: {user_id_p})")
         else:
             # Validate result format
             is_valid, error_msg = validate_result_format(result_input)
             if not is_valid:
-                await message.answer(f"❌ {error_msg}\n\nПовторите ввод для <b>{name}</b>:", reply_markup=create_back_keyboard("admin_menu"))
+                await message.answer(
+                    f"❌ {error_msg}\n\nПовторите ввод для <b>{name}</b>:",
+                    reply_markup=create_back_keyboard("admin_menu"),
+                )
                 return
-            
+
             results[user_id_p] = result_input
-            logger.info(f"Записан результат {result_input} для участника {name} (ID: {user_id_p})")
-        
+            logger.info(
+                f"Записан результат {result_input} для участника {name} (ID: {user_id_p})"
+            )
+
         # Move to next participant
         current_index += 1
-        
+
         if current_index < len(runners):
             # Show next participant
-            await state.update_data(
-                current_index=current_index,
-                results=results
-            )
+            await state.update_data(current_index=current_index, results=results)
             next_participant = runners[current_index]
-            await show_next_participant_for_result(message, state, next_participant, current_index, len(runners))
+            await show_next_participant_for_result(
+                message, state, next_participant, current_index, len(runners)
+            )
         else:
             # All participants processed, show summary and ask for notification
             await show_results_summary(message, state, runners, results)
-    
-    @dp.callback_query(F.data == "result_skip", RegistrationForm.waiting_for_participant_result)
+
+    @dp.callback_query(
+        F.data == "result_skip", RegistrationForm.waiting_for_participant_result
+    )
     async def process_skip_result(callback_query: CallbackQuery, state: FSMContext):
         """Process skip button for participant result"""
         await callback_query.answer()
         await callback_query.message.delete()
-        
+
         data = await state.get_data()
-        runners = data.get('runners', [])
-        current_index = data.get('current_index', 0)
-        results = data.get('results', {})
-        
+        runners = data.get("runners", [])
+        current_index = data.get("current_index", 0)
+        results = data.get("results", {})
+
         if current_index >= len(runners):
-            await callback_query.message.answer("❌ Ошибка: индекс участника вышел за границы.")
+            await callback_query.message.answer(
+                "❌ Ошибка: индекс участника вышел за границы."
+            )
             await state.clear()
             return
-        
+
         current_participant = runners[current_index]
         user_id_p = current_participant[0]
         name = current_participant[2]
-        
+
         logger.info(f"Пропущен результат для участника {name} (ID: {user_id_p})")
-        
+
         # Move to next participant
         current_index += 1
-        
+
         if current_index < len(runners):
             # Show next participant
-            await state.update_data(
-                current_index=current_index,
-                results=results
-            )
+            await state.update_data(current_index=current_index, results=results)
             next_participant = runners[current_index]
-            await show_next_participant_for_result(callback_query.message, state, next_participant, current_index, len(runners))
+            await show_next_participant_for_result(
+                callback_query.message,
+                state,
+                next_participant,
+                current_index,
+                len(runners),
+            )
         else:
             # All participants processed, show summary and ask for notification
             await show_results_summary(callback_query.message, state, runners, results)
-    
-    @dp.callback_query(F.data == "result_dnf", RegistrationForm.waiting_for_participant_result)
+
+    @dp.callback_query(
+        F.data == "result_dnf", RegistrationForm.waiting_for_participant_result
+    )
     async def process_dnf_result(callback_query: CallbackQuery, state: FSMContext):
         """Process DNF button for participant result"""
         await callback_query.answer()
         await callback_query.message.delete()
-        
+
         data = await state.get_data()
-        runners = data.get('runners', [])
-        current_index = data.get('current_index', 0)
-        results = data.get('results', {})
-        
+        runners = data.get("runners", [])
+        current_index = data.get("current_index", 0)
+        results = data.get("results", {})
+
         if current_index >= len(runners):
-            await callback_query.message.answer("❌ Ошибка: индекс участника вышел за границы.")
+            await callback_query.message.answer(
+                "❌ Ошибка: индекс участника вышел за границы."
+            )
             await state.clear()
             return
-        
+
         current_participant = runners[current_index]
         user_id_p = current_participant[0]
         name = current_participant[2]
-        
-        results[user_id_p] = 'DNF'
+
+        results[user_id_p] = "DNF"
         logger.info(f"Записан DNF для участника {name} (ID: {user_id_p})")
-        
+
         # Move to next participant
         current_index += 1
-        
+
         if current_index < len(runners):
             # Show next participant
-            await state.update_data(
-                current_index=current_index,
-                results=results
-            )
+            await state.update_data(current_index=current_index, results=results)
             next_participant = runners[current_index]
-            await show_next_participant_for_result(callback_query.message, state, next_participant, current_index, len(runners))
+            await show_next_participant_for_result(
+                callback_query.message,
+                state,
+                next_participant,
+                current_index,
+                len(runners),
+            )
         else:
             # All participants processed, show summary and ask for notification
             await show_results_summary(callback_query.message, state, runners, results)
-    
-    async def show_results_summary(message: Message, state: FSMContext, runners, results):
+
+    async def show_results_summary(
+        message: Message, state: FSMContext, runners, results
+    ):
         """Show summary of all results and ask for mass notification"""
         text = "📊 <b>Итоги записи результатов</b>\n\n"
-        
+
         recorded_count = 0
         dnf_count = 0
         skipped_count = 0
-        
+
         for participant in runners:
             user_id_p = participant[0]
             name = participant[2]
             bib_number = participant[7]
-            
+
             if user_id_p in results:
                 result = results[user_id_p]
-                if result == 'DNF':
+                if result == "DNF":
                     text += f"🏷 {bib_number} - <b>{name}</b>: DNF\n"
                     dnf_count += 1
                 else:
@@ -1170,45 +1397,56 @@ def register_admin_participant_handlers(dp: Dispatcher, bot: Bot, admin_id: int)
             else:
                 text += f"🏷 {bib_number} - <b>{name}</b>: пропущен\n"
                 skipped_count += 1
-        
+
         text += f"\n📈 <b>Статистика:</b>\n"
         text += f"• Результатов записано: {recorded_count}\n"
-        text += f"• DNF: {dnf_count}\n" 
+        text += f"• DNF: {dnf_count}\n"
         text += f"• Пропущено: {skipped_count}\n"
         text += f"• Всего участников: {len(runners)}\n"
-        
+
         # Create confirmation keyboard
         keyboard = InlineKeyboardMarkup(
             inline_keyboard=[
                 [
-                    InlineKeyboardButton(text="✅ Да, отправить всем", callback_data="send_results_yes"),
-                    InlineKeyboardButton(text="❌ Нет, только сохранить", callback_data="send_results_no")
+                    InlineKeyboardButton(
+                        text="✅ Да, отправить всем", callback_data="send_results_yes"
+                    ),
+                    InlineKeyboardButton(
+                        text="❌ Нет, только сохранить", callback_data="send_results_no"
+                    ),
                 ],
-                [InlineKeyboardButton(text="🔄 Отменить все", callback_data="cancel_results")]
+                [
+                    InlineKeyboardButton(
+                        text="🔄 Отменить все", callback_data="cancel_results"
+                    )
+                ],
             ]
         )
-        
+
         text += f"\n💬 <b>Отправить результаты всем участникам?</b>"
-        
+
         await message.answer(text, reply_markup=keyboard)
         await state.set_state(RegistrationForm.waiting_for_results_send_confirmation)
-    
-    @dp.callback_query(F.data.in_(["send_results_yes", "send_results_no", "cancel_results"]), RegistrationForm.waiting_for_results_send_confirmation)
+
+    @dp.callback_query(
+        F.data.in_(["send_results_yes", "send_results_no", "cancel_results"]),
+        RegistrationForm.waiting_for_results_send_confirmation,
+    )
     async def process_results_confirmation(callback: CallbackQuery, state: FSMContext):
         """Process the confirmation for sending results"""
         action = callback.data
         await callback.message.delete()
-        
+
         data = await state.get_data()
-        runners = data.get('runners', [])
-        results = data.get('results', {})
-        
+        runners = data.get("runners", [])
+        results = data.get("results", {})
+
         if action == "cancel_results":
             await callback.message.answer("❌ Запись результатов отменена.")
             await state.clear()
             await callback.answer()
             return
-        
+
         # Save results to database
         saved_count = 0
         for user_id_p, result in results.items():
@@ -1216,71 +1454,87 @@ def register_admin_participant_handlers(dp: Dispatcher, bot: Bot, admin_id: int)
                 success = set_result(user_id_p, result)
                 if success:
                     saved_count += 1
-                    logger.info(f"Результат сохранён в БД для user_id={user_id_p}: {result}")
+                    logger.info(
+                        f"Результат сохранён в БД для user_id={user_id_p}: {result}"
+                    )
                 else:
-                    logger.error(f"Ошибка сохранения результата для user_id={user_id_p}")
+                    logger.error(
+                        f"Ошибка сохранения результата для user_id={user_id_p}"
+                    )
             except Exception as e:
-                logger.error(f"Исключение при сохранении результата для user_id={user_id_p}: {e}")
-        
+                logger.error(
+                    f"Исключение при сохранении результата для user_id={user_id_p}: {e}"
+                )
+
         status_text = f"💾 <b>Результаты сохранены</b>\n\n"
         status_text += f"✅ Успешно сохранено: {saved_count}/{len(results)}\n"
-        
+
         if action == "send_results_yes":
             # Send notifications to all participants
-            await callback.message.answer(status_text + "📤 Отправляю уведомления участникам...")
-            
+            await callback.message.answer(
+                status_text + "📤 Отправляю уведомления участникам..."
+            )
+
             sent_count = 0
             blocked_count = 0
-            
+
             for participant in runners:
                 user_id_p = participant[0]
                 name = participant[2]
                 bib_number = participant[7]
-                
+
                 if user_id_p in results:
                     result = results[user_id_p]
-                    
+
                     # Create beautiful result message
                     result_text = f"🏃 <b>Ваш результат в Пивном Квартале!</b>\n\n"
                     result_text += f"👤 <b>{name}</b>\n"
                     result_text += f"🏷 Номер: {bib_number}\n"
-                    
-                    if result == 'DNF':
+
+                    if result == "DNF":
                         result_text += f"🏁 Результат: DNF (не финишировал)\n\n"
                         result_text += f"💪 Не расстраивайтесь! Главное - участие!"
                     else:
                         result_text += f"🏁 Результат: <b>{result}</b>\n\n"
                         result_text += f"🎉 Поздравляем с финишем!"
-                    
+
                     result_text += f"\n\nБлагодарим за участие в Пивном Квартале! 🍺"
-                    
+
                     try:
                         await bot.send_message(chat_id=user_id_p, text=result_text)
                         sent_count += 1
-                        logger.info(f"Результат отправлен участнику {name} (ID: {user_id_p})")
+                        logger.info(
+                            f"Результат отправлен участнику {name} (ID: {user_id_p})"
+                        )
                     except TelegramForbiddenError:
-                        logger.warning(f"Участник {name} (ID: {user_id_p}) заблокировал бота")
+                        logger.warning(
+                            f"Участник {name} (ID: {user_id_p}) заблокировал бота"
+                        )
                         blocked_count += 1
                     except Exception as e:
-                        logger.error(f"Ошибка отправки результата участнику {name} (ID: {user_id_p}): {e}")
+                        logger.error(
+                            f"Ошибка отправки результата участнику {name} (ID: {user_id_p}): {e}"
+                        )
                         blocked_count += 1
-            
+
             final_text = f"📧 <b>Рассылка завершена</b>\n\n"
             final_text += f"✅ Отправлено уведомлений: {sent_count}\n"
             final_text += f"❌ Не доставлено: {blocked_count}\n"
             final_text += f"📊 Всего результатов: {len(results)}\n"
-            
+
             await callback.message.answer(final_text)
         else:
-            await callback.message.answer(status_text + "📝 Результаты сохранены без отправки уведомлений.")
-        
+            await callback.message.answer(
+                status_text + "📝 Результаты сохранены без отправки уведомлений."
+            )
+
         await state.clear()
         await callback.answer()
-    
+
     @dp.message(Command("results", "результаты"))
     async def cmd_record_results(message: Message, state: FSMContext):
         await record_results(message, state)
-    
+
     @dp.callback_query(F.data == "admin_results")
     async def callback_record_results(callback: CallbackQuery, state: FSMContext):
         await record_results(callback, state)
@@ -1395,19 +1649,31 @@ def register_admin_participant_handlers(dp: Dispatcher, bot: Bot, admin_id: int)
             )
             await callback_query.answer()
             return
-        
+
         # Filter only runners and create list with parsed results for sorting
         runners = []
-        for (user_id, username, name, target_time, role, reg_date, payment_status, 
-             bib_number, result, gender, category, cluster) in participants:
+        for (
+            user_id,
+            username,
+            name,
+            target_time,
+            role,
+            reg_date,
+            payment_status,
+            bib_number,
+            result,
+            gender,
+            category,
+            cluster,
+        ) in participants:
             if role == "runner":
                 # Parse result for sorting (convert time to seconds, DNF goes to end)
                 sort_key = 999999  # Default for DNF or no result
-                if result and result.upper() not in ['DNF', 'НЕ УКАЗАН', 'НЕТ']:
+                if result and result.upper() not in ["DNF", "НЕ УКАЗАН", "НЕТ"]:
                     try:
                         # Parse time format like "0:07:21" or "7:21"
-                        if ':' in result:
-                            time_parts = result.split(':')
+                        if ":" in result:
+                            time_parts = result.split(":")
                             if len(time_parts) == 3:  # H:MM:SS
                                 hours, minutes, seconds = map(int, time_parts)
                                 sort_key = hours * 3600 + minutes * 60 + seconds
@@ -1416,60 +1682,96 @@ def register_admin_participant_handlers(dp: Dispatcher, bot: Bot, admin_id: int)
                                 sort_key = minutes * 60 + seconds
                     except:
                         pass  # Keep default DNF sort key
-                
-                runners.append((sort_key, user_id, username, name, target_time, reg_date, 
-                              payment_status, bib_number, result, gender, category, cluster))
-        
+
+                runners.append(
+                    (
+                        sort_key,
+                        user_id,
+                        username,
+                        name,
+                        target_time,
+                        reg_date,
+                        payment_status,
+                        bib_number,
+                        result,
+                        gender,
+                        category,
+                        cluster,
+                    )
+                )
+
         # Sort by result (faster times first, DNF last)
         runners.sort(key=lambda x: x[0])
-        
+
         # Format output
         header = f"🏃‍♂️ <b>Результаты гонки {race_date}</b>\n\n"
-        
+
         chunks = []
         current_chunk = header
-        
-        for position, (_, user_id, username, name, target_time, reg_date, 
-                      payment_status, bib_number, result, gender, category, cluster) in enumerate(runners, 1):
-            
+
+        for position, (
+            _,
+            user_id,
+            username,
+            name,
+            target_time,
+            reg_date,
+            payment_status,
+            bib_number,
+            result,
+            gender,
+            category,
+            cluster,
+        ) in enumerate(runners, 1):
+
             # Format result display
-            if result and result.upper() not in ['НЕ УКАЗАН', 'НЕТ']:
+            if result and result.upper() not in ["НЕ УКАЗАН", "НЕТ"]:
                 result_display = result
             else:
                 result_display = "DNF"
-            
+
             # Format bib number
             bib_display = f"№{bib_number}" if bib_number else "—"
-            
+
             # Format gender
-            gender_emoji = "👨" if gender == "М" or gender == "male" else "👩" if gender == "Ж" or gender == "female" else "👤"
-            
+            gender_emoji = (
+                "👨"
+                if gender == "М" or gender == "male"
+                else "👩" if gender == "Ж" or gender == "female" else "👤"
+            )
+
             # Format category and cluster
             category_display = f" ({category})" if category else ""
-            
+
             # Create participant line
             participant_line = (
                 f"{position}. {gender_emoji} <b>{name}</b> — {result_display}\n"
                 f"   {bib_display} • @{username or 'нет'}{category_display}\n\n"
             )
-            
+
             # Check if we need to split into chunks
             if len(current_chunk) + len(participant_line) > 4000:
                 chunks.append(current_chunk)
                 current_chunk = header + participant_line
             else:
                 current_chunk += participant_line
-        
+
         # Add final chunk
         if current_chunk != header:
             chunks.append(current_chunk)
-        
+
         # Add summary
         total_runners = len(runners)
-        finished_runners = len([r for r in runners if r[8] and r[8].upper() not in ['DNF', 'НЕ УКАЗАН', 'НЕТ']])
-        
+        finished_runners = len(
+            [
+                r
+                for r in runners
+                if r[8] and r[8].upper() not in ["DNF", "НЕ УКАЗАН", "НЕТ"]
+            ]
+        )
+
         summary = f"📊 <b>Итого:</b> {finished_runners}/{total_runners} финишировали"
-        
+
         # Add summary to last chunk or create new one
         if chunks:
             if len(chunks[-1]) + len(summary) > 4000:
@@ -1477,8 +1779,10 @@ def register_admin_participant_handlers(dp: Dispatcher, bot: Bot, admin_id: int)
             else:
                 chunks[-1] += f"\n{summary}"
         else:
-            chunks = [f"🏃‍♂️ <b>Результаты гонки {race_date}</b>\n\nНет участников-бегунов."]
-        
+            chunks = [
+                f"🏃‍♂️ <b>Результаты гонки {race_date}</b>\n\nНет участников-бегунов."
+            ]
+
         # Send all chunks
         for chunk in chunks:
             await callback_query.message.answer(chunk)
@@ -1556,7 +1860,8 @@ def register_admin_participant_handlers(dp: Dispatcher, bot: Bot, admin_id: int)
             with sqlite3.connect("/app/data/race_participants.db", timeout=10) as conn:
                 cursor = conn.cursor()
                 # Get all runners from current participants table with all info
-                cursor.execute("""
+                cursor.execute(
+                    """
                     SELECT user_id, username, name, target_time, bib_number, result, gender, reg_date, payment_status
                     FROM participants 
                     WHERE role = 'runner' 
@@ -1564,21 +1869,24 @@ def register_admin_participant_handlers(dp: Dispatcher, bot: Bot, admin_id: int)
                         CASE WHEN result = 'DNF' THEN 1 ELSE 0 END,
                         CASE WHEN result IS NULL OR result = '' THEN 1 ELSE 0 END,
                         result
-                """)
+                """
+                )
                 runners = cursor.fetchall()
-                
+
         except sqlite3.Error as e:
             logger.error(f"Ошибка при получении данных протокола: {e}")
             await event.message.answer("❌ Ошибка при получении данных протокола.")
             return
 
         if not runners:
-            await event.message.answer("🏆 <b>Протокол актуальной гонки</b>\n\n📋 Пока нет участников с результатами.")
+            await event.message.answer(
+                "🏆 <b>Протокол актуальной гонки</b>\n\n📋 Пока нет участников с результатами."
+            )
             return
 
         def time_to_seconds(time_str):
             """Convert time string to seconds for sorting"""
-            if not time_str or time_str.upper() == 'DNF':
+            if not time_str or time_str.upper() == "DNF":
                 return float("inf")
             try:
                 parts = time_str.split(":")
@@ -1595,30 +1903,52 @@ def register_admin_participant_handlers(dp: Dispatcher, bot: Bot, admin_id: int)
         # Separate runners with results and without
         runners_with_results = []
         runners_without_results = []
-        
+
         for runner in runners:
-            user_id, username, name, target_time, bib_number, result, gender, reg_date, payment_status = runner
+            (
+                user_id,
+                username,
+                name,
+                target_time,
+                bib_number,
+                result,
+                gender,
+                reg_date,
+                payment_status,
+            ) = runner
             if result and result.strip():
                 runners_with_results.append(runner)
             else:
                 runners_without_results.append(runner)
-        
+
         # Sort runners with results by time
-        runners_with_results.sort(key=lambda x: time_to_seconds(x[5]))  # result is at index 5
-        
+        runners_with_results.sort(
+            key=lambda x: time_to_seconds(x[5])
+        )  # result is at index 5
+
         # Build protocol message
         text = "🏆 <b>Протокол актуальной гонки</b>\n\n"
-        
+
         # Show finishers first
         if runners_with_results:
             text += f"🏁 <b>Финишировавшие ({len(runners_with_results)}):</b>\n\n"
-            
+
             place = 1
             for runner in runners_with_results:
-                user_id, username, name, target_time, bib_number, result, gender, reg_date, payment_status = runner
-                
+                (
+                    user_id,
+                    username,
+                    name,
+                    target_time,
+                    bib_number,
+                    result,
+                    gender,
+                    reg_date,
+                    payment_status,
+                ) = runner
+
                 # Skip DNF for place counting
-                if result and result.upper() != 'DNF':
+                if result and result.upper() != "DNF":
                     medal_emoji = ""
                     if place == 1:
                         medal_emoji = "🥇 "
@@ -1626,7 +1956,7 @@ def register_admin_participant_handlers(dp: Dispatcher, bot: Bot, admin_id: int)
                         medal_emoji = "🥈 "
                     elif place == 3:
                         medal_emoji = "🥉 "
-                    
+
                     text += f"{medal_emoji}<b>{place}. {name}</b>\n"
                     text += f"   🏷 Номер: {bib_number or '—'}\n"
                     text += f"   ⏰ Результат: <b>{result}</b>\n"
@@ -1642,48 +1972,62 @@ def register_admin_participant_handlers(dp: Dispatcher, bot: Bot, admin_id: int)
                     if username:
                         text += f"   📱 @{username}\n"
                     text += f"   👤 {gender or '—'}\n\n"
-        
+
         # Show runners without results
         if runners_without_results:
             text += f"⏳ <b>Без результатов ({len(runners_without_results)}):</b>\n\n"
-            
+
             for runner in runners_without_results:
-                user_id, username, name, target_time, bib_number, result, gender, reg_date, payment_status = runner
-                
+                (
+                    user_id,
+                    username,
+                    name,
+                    target_time,
+                    bib_number,
+                    result,
+                    gender,
+                    reg_date,
+                    payment_status,
+                ) = runner
+
                 text += f"🏃 <b>{name}</b>\n"
                 text += f"   🏷 Номер: {bib_number or '—'}\n"
                 text += f"   🎯 Цель: {target_time or '—'}\n"
                 if username:
                     text += f"   📱 @{username}\n"
                 text += f"   👤 {gender or '—'}\n\n"
-        
+
         # Add summary stats
         total_registered = len(runners_with_results) + len(runners_without_results)
-        finished_count = len([r for r in runners_with_results if r[5] and r[5].upper() != 'DNF'])
-        dnf_count = len([r for r in runners_with_results if r[5] and r[5].upper() == 'DNF'])
-        
+        finished_count = len(
+            [r for r in runners_with_results if r[5] and r[5].upper() != "DNF"]
+        )
+        dnf_count = len(
+            [r for r in runners_with_results if r[5] and r[5].upper() == "DNF"]
+        )
+
         text += f"📊 <b>Статистика:</b>\n"
         text += f"• Зарегистрировано: {total_registered}\n"
-        text += f"• Финишировало: {finished_count}\n" 
+        text += f"• Финишировало: {finished_count}\n"
         text += f"• DNF: {dnf_count}\n"
         text += f"• Без результатов: {len(runners_without_results)}\n"
-        
+
         # Split long messages
         if len(text) > 4000:
             chunks = []
-            lines = text.split('\n')
+            lines = text.split("\n")
             current_chunk = "🏆 <b>Протокол актуальной гонки</b>\n\n"
-            
+
             for line in lines[2:]:  # Skip header
-                if len(current_chunk + line + '\n') > 4000:
+                if len(current_chunk + line + "\n") > 4000:
                     chunks.append(current_chunk.rstrip())
-                    current_chunk = "🏆 <b>Протокол (продолжение)</b>\n\n" + line + '\n'
+                    current_chunk = "🏆 <b>Протокол (продолжение)</b>\n\n" + line + "\n"
                 else:
-                    current_chunk += line + '\n'
-            
+                    current_chunk += line + "\n"
+
             if current_chunk.strip():
                 chunks.append(current_chunk.rstrip())
-                
+
             for chunk in chunks:
                 await event.message.answer(chunk)
         else:
@@ -1693,12 +2037,13 @@ def register_admin_participant_handlers(dp: Dispatcher, bot: Bot, admin_id: int)
         """Show protocol by gender with beautiful formatting"""
         gender = callback_query.data
         await callback_query.message.delete()
-        
+
         try:
             with sqlite3.connect("/app/data/race_participants.db", timeout=10) as conn:
                 cursor = conn.cursor()
                 # Get all runners of specific gender from current participants table
-                cursor.execute("""
+                cursor.execute(
+                    """
                     SELECT user_id, username, name, target_time, bib_number, result, reg_date, payment_status
                     FROM participants 
                     WHERE gender = ? AND role = 'runner'
@@ -1706,12 +2051,16 @@ def register_admin_participant_handlers(dp: Dispatcher, bot: Bot, admin_id: int)
                         CASE WHEN result = 'DNF' THEN 1 ELSE 0 END,
                         CASE WHEN result IS NULL OR result = '' THEN 1 ELSE 0 END,
                         result
-                """, (gender,))
+                """,
+                    (gender,),
+                )
                 runners = cursor.fetchall()
-                
+
         except sqlite3.Error as e:
             logger.error(f"Ошибка при получении данных протокола по полу: {e}")
-            await callback_query.message.answer("❌ Ошибка при получении данных протокола.")
+            await callback_query.message.answer(
+                "❌ Ошибка при получении данных протокола."
+            )
             await state.clear()
             await callback_query.answer()
             return
@@ -1720,14 +2069,16 @@ def register_admin_participant_handlers(dp: Dispatcher, bot: Bot, admin_id: int)
         gender_emoji = "👨" if gender == "male" else "👩"
 
         if not runners:
-            await callback_query.message.answer(f"🏆 <b>Протокол актуальной гонки</b>\n\n{gender_emoji} <b>{gender_name.title()}</b>\n\n📋 Участников не найдено.")
+            await callback_query.message.answer(
+                f"🏆 <b>Протокол актуальной гонки</b>\n\n{gender_emoji} <b>{gender_name.title()}</b>\n\n📋 Участников не найдено."
+            )
             await state.clear()
             await callback_query.answer()
             return
 
         def time_to_seconds(time_str):
             """Convert time string to seconds for sorting"""
-            if not time_str or time_str.upper() == 'DNF':
+            if not time_str or time_str.upper() == "DNF":
                 return float("inf")
             try:
                 parts = time_str.split(":")
@@ -1744,30 +2095,50 @@ def register_admin_participant_handlers(dp: Dispatcher, bot: Bot, admin_id: int)
         # Separate runners with results and without
         runners_with_results = []
         runners_without_results = []
-        
+
         for runner in runners:
-            user_id, username, name, target_time, bib_number, result, reg_date, payment_status = runner
+            (
+                user_id,
+                username,
+                name,
+                target_time,
+                bib_number,
+                result,
+                reg_date,
+                payment_status,
+            ) = runner
             if result and result.strip():
                 runners_with_results.append(runner)
             else:
                 runners_without_results.append(runner)
-        
+
         # Sort runners with results by time
-        runners_with_results.sort(key=lambda x: time_to_seconds(x[5]))  # result is at index 5
-        
+        runners_with_results.sort(
+            key=lambda x: time_to_seconds(x[5])
+        )  # result is at index 5
+
         # Build protocol message
         text = f"🏆 <b>Протокол актуальной гонки</b>\n\n{gender_emoji} <b>{gender_name.title()}</b>\n\n"
-        
+
         # Show finishers first
         if runners_with_results:
             text += f"🏁 <b>Финишировали ({len(runners_with_results)}):</b>\n\n"
-            
+
             place = 1
             for runner in runners_with_results:
-                user_id, username, name, target_time, bib_number, result, reg_date, payment_status = runner
-                
+                (
+                    user_id,
+                    username,
+                    name,
+                    target_time,
+                    bib_number,
+                    result,
+                    reg_date,
+                    payment_status,
+                ) = runner
+
                 # Skip DNF for place counting
-                if result and result.upper() != 'DNF':
+                if result and result.upper() != "DNF":
                     medal_emoji = ""
                     if place == 1:
                         medal_emoji = "🥇 "
@@ -1775,7 +2146,7 @@ def register_admin_participant_handlers(dp: Dispatcher, bot: Bot, admin_id: int)
                         medal_emoji = "🥈 "
                     elif place == 3:
                         medal_emoji = "🥉 "
-                    
+
                     text += f"{medal_emoji}<b>{place}. {name}</b>\n"
                     text += f"   🏷 Номер: {bib_number or '—'}\n"
                     text += f"   ⏰ Результат: <b>{result}</b>\n"
@@ -1791,56 +2162,72 @@ def register_admin_participant_handlers(dp: Dispatcher, bot: Bot, admin_id: int)
                     if username:
                         text += f"   📱 @{username}\n"
                     text += "\n"
-        
+
         # Show runners without results
         if runners_without_results:
             text += f"⏳ <b>Без результатов ({len(runners_without_results)}):</b>\n\n"
-            
+
             for runner in runners_without_results:
-                user_id, username, name, target_time, bib_number, result, reg_date, payment_status = runner
-                
+                (
+                    user_id,
+                    username,
+                    name,
+                    target_time,
+                    bib_number,
+                    result,
+                    reg_date,
+                    payment_status,
+                ) = runner
+
                 text += f"🏃 <b>{name}</b>\n"
                 text += f"   🏷 Номер: {bib_number or '—'}\n"
                 text += f"   🎯 Цель: {target_time or '—'}\n"
                 if username:
                     text += f"   📱 @{username}\n"
                 text += "\n"
-        
+
         # Add summary stats
         total_registered = len(runners_with_results) + len(runners_without_results)
-        finished_count = len([r for r in runners_with_results if r[5] and r[5].upper() != 'DNF'])
-        dnf_count = len([r for r in runners_with_results if r[5] and r[5].upper() == 'DNF'])
-        
+        finished_count = len(
+            [r for r in runners_with_results if r[5] and r[5].upper() != "DNF"]
+        )
+        dnf_count = len(
+            [r for r in runners_with_results if r[5] and r[5].upper() == "DNF"]
+        )
+
         text += f"📊 <b>Статистика {gender_name}:</b>\n"
         text += f"• Зарегистрировано: {total_registered}\n"
-        text += f"• Финишировало: {finished_count}\n" 
+        text += f"• Финишировало: {finished_count}\n"
         text += f"• DNF: {dnf_count}\n"
         text += f"• Без результатов: {len(runners_without_results)}\n"
-        
+
         # Split long messages
         if len(text) > 4000:
             chunks = []
-            lines = text.split('\n')
+            lines = text.split("\n")
             current_chunk = f"🏆 <b>Протокол актуальной гонки</b>\n\n{gender_emoji} <b>{gender_name.title()}</b>\n\n"
-            
+
             for line in lines[3:]:  # Skip header
-                if len(current_chunk + line + '\n') > 4000:
+                if len(current_chunk + line + "\n") > 4000:
                     chunks.append(current_chunk.rstrip())
-                    current_chunk = f"🏆 <b>Протокол {gender_name} (продолжение)</b>\n\n" + line + '\n'
+                    current_chunk = (
+                        f"🏆 <b>Протокол {gender_name} (продолжение)</b>\n\n"
+                        + line
+                        + "\n"
+                    )
                 else:
-                    current_chunk += line + '\n'
-            
+                    current_chunk += line + "\n"
+
             if current_chunk.strip():
                 chunks.append(current_chunk.rstrip())
-                
+
             for chunk in chunks:
                 await callback_query.message.answer(chunk)
         else:
             await callback_query.message.answer(text)
-            
+
         await state.clear()
         await callback_query.answer()
-
 
     @dp.message(Command("protocol"))
     async def cmd_protocol(message: Message, state: FSMContext):
@@ -1862,18 +2249,18 @@ def register_admin_participant_handlers(dp: Dispatcher, bot: Bot, admin_id: int)
     ):
         await process_gender_protocol(callback_query, state)
 
-
     @dp.callback_query(F.data == "admin_waitlist")
     async def callback_admin_waitlist(callback: CallbackQuery):
         """Handle admin waitlist button"""
         if callback.from_user.id != admin_id:
             await callback.answer("❌ Доступ запрещен")
             return
-            
+
         await callback.message.delete()
-        
+
         # Import and use the waitlist function
         from .waitlist_handlers import handle_admin_waitlist_command
+
         await handle_admin_waitlist_command(callback.message)
         await callback.answer()
 
@@ -1883,19 +2270,23 @@ def register_admin_participant_handlers(dp: Dispatcher, bot: Bot, admin_id: int)
         if callback.from_user.id != admin_id:
             await callback.answer("❌ Доступ запрещен")
             return
-            
+
         await callback.message.delete()
-        
+
         participants = get_all_participants()
         if not participants:
-            await callback.message.answer("📢 <b>Уведомить участников</b>\n\n❌ Нет зарегистрированных участников для уведомления.")
+            await callback.message.answer(
+                "📢 <b>Уведомить участников</b>\n\n❌ Нет зарегистрированных участников для уведомления."
+            )
             await callback.answer()
             return
-        
+
         text = "📢 <b>Уведомить участников</b>\n\n"
         text += f"👥 Найдено участников: {len(participants)}\n\n"
-        text += "✏️ Введите текст сообщения для отправки всем зарегистрированным участникам:"
-        
+        text += (
+            "✏️ Введите текст сообщения для отправки всем зарегистрированным участникам:"
+        )
+
         await callback.message.answer(text)
         await state.set_state(RegistrationForm.waiting_for_notify_participants_message)
         await callback.answer()
@@ -1908,125 +2299,146 @@ def register_admin_participant_handlers(dp: Dispatcher, bot: Bot, admin_id: int)
             await message.answer("❌ Доступ запрещен")
             await state.clear()
             return
-            
+
         notify_text = message.text.strip() if message.text else ""
         if not notify_text:
             await message.answer("❌ Сообщение не может быть пустым. Попробуйте снова:")
             return
-            
+
         if len(notify_text) > 4096:
-            await message.answer("❌ Сообщение слишком длинное. Максимум 4096 символов. Попробуйте снова:")
+            await message.answer(
+                "❌ Сообщение слишком длинное. Максимум 4096 символов. Попробуйте снова:"
+            )
             return
-        
-        await message.answer("📤 <b>Отправка уведомлений...</b>\n\nОтправляю сообщения всем участникам...")
-        
+
+        await message.answer(
+            "📤 <b>Отправка уведомлений...</b>\n\nОтправляю сообщения всем участникам..."
+        )
+
         participants = get_all_participants()
         success_count = 0
         blocked_count = 0
-        
+
         for participant in participants:
             user_id_p = participant[0]
             name = participant[2]
             username = participant[1] or "не указан"
-            
+
             try:
                 await bot.send_message(
-                    chat_id=user_id_p,
-                    text=notify_text,
-                    parse_mode="HTML"
+                    chat_id=user_id_p, text=notify_text, parse_mode="HTML"
                 )
                 success_count += 1
-                logger.info(f"Кастомное уведомление отправлено участнику {name} (ID: {user_id_p})")
-                
+                logger.info(
+                    f"Кастомное уведомление отправлено участнику {name} (ID: {user_id_p})"
+                )
+
             except TelegramForbiddenError:
                 logger.warning(f"Участник {name} (ID: {user_id_p}) заблокировал бота")
                 blocked_count += 1
-                
+
                 # Optionally remove blocked users
                 try:
                     delete_participant(user_id_p)
                     delete_pending_registration(user_id_p)
                     logger.info(f"Участник {name} (ID: {user_id_p}) удален из БД")
-                    
+
                     # Notify admin about blocked user
                     await bot.send_message(
                         chat_id=admin_id,
                         text=f"🚫 <b>Пользователь заблокировал бота</b>\n\n"
-                             f"👤 Имя: {name}\n"
-                             f"📱 Username: @{username}\n"
-                             f"🆔 ID: <code>{user_id_p}</code>\n\n"
-                             f"Пользователь удален из базы данных."
+                        f"👤 Имя: {name}\n"
+                        f"📱 Username: @{username}\n"
+                        f"🆔 ID: <code>{user_id_p}</code>\n\n"
+                        f"Пользователь удален из базы данных.",
                     )
                 except Exception as e:
-                    logger.error(f"Ошибка при обработке заблокированного пользователя {user_id_p}: {e}")
-                    
+                    logger.error(
+                        f"Ошибка при обработке заблокированного пользователя {user_id_p}: {e}"
+                    )
+
             except Exception as e:
-                logger.error(f"Ошибка отправки кастомного уведомления участнику {name} (ID: {user_id_p}): {e}")
+                logger.error(
+                    f"Ошибка отправки кастомного уведомления участнику {name} (ID: {user_id_p}): {e}"
+                )
                 blocked_count += 1
-        
+
         # Send summary
         result_text = f"✅ <b>Рассылка завершена</b>\n\n"
         result_text += f"📊 <b>Статистика:</b>\n"
         result_text += f"• Успешно отправлено: {success_count}\n"
         result_text += f"• Не доставлено: {blocked_count}\n"
         result_text += f"• Всего участников: {len(participants)}\n"
-        
+
         await message.answer(result_text)
         await state.clear()
-        logger.info(f"Кастомная рассылка завершена: {success_count}/{len(participants)} успешно")
+        logger.info(
+            f"Кастомная рассылка завершена: {success_count}/{len(participants)} успешно"
+        )
 
-    async def start_sequential_bib_assignment(event: [Message, CallbackQuery], state: FSMContext):
+    async def start_sequential_bib_assignment(
+        event: [Message, CallbackQuery], state: FSMContext
+    ):
         """Start sequential bib number assignment process"""
         user_id = event.from_user.id
         if user_id != admin_id:
             await event.answer("❌ Доступ запрещен")
             return
-        
+
         # Get all participants (runners only for bib assignment)
         participants = get_participants_by_role("runner")
-        
+
         if not participants:
             await event.answer("❌ Нет участников для присвоения номеров")
             return
-        
+
         # Store participants list in state data
         await state.update_data(
-            participants=participants,
-            current_index=0,
-            assignment_type="bib"
+            participants=participants, current_index=0, assignment_type="bib"
         )
-        
+
         if isinstance(event, CallbackQuery):
             await event.message.delete()
             await event.answer()
-        
-        # Show first participant
-        await show_participant_for_bib_assignment(event.message if isinstance(event, CallbackQuery) else event, state, bot)
 
-    async def show_participant_for_bib_assignment(message: Message, state: FSMContext, bot: Bot):
+        # Show first participant
+        await show_participant_for_bib_assignment(
+            event.message if isinstance(event, CallbackQuery) else event, state, bot
+        )
+
+    async def show_participant_for_bib_assignment(
+        message: Message, state: FSMContext, bot: Bot
+    ):
         """Show current participant for bib number assignment"""
         data = await state.get_data()
         participants = data.get("participants", [])
         current_index = data.get("current_index", 0)
-        
+
         if current_index >= len(participants):
             # Assignment complete, show summary
             await show_bib_assignment_summary(message, state, participants)
             return
-        
+
         participant = participants[current_index]
         user_id, username, name, target_time, gender, category, cluster = participant
-        
+
         # Get existing bib number if any
         try:
             from database import get_participant_by_user_id
+
             full_participant = get_participant_by_user_id(user_id)
-            current_bib = full_participant[7] if full_participant and len(full_participant) > 7 else None
+            current_bib = (
+                full_participant[7]
+                if full_participant and len(full_participant) > 7
+                else None
+            )
         except:
             current_bib = None
-        
+
         # Build participant info
-        text = f"🏷 <b>Присвоение номеров ({current_index + 1}/{len(participants)})</b>\n\n"
+        text = (
+            f"🏷 <b>Присвоение номеров ({current_index + 1}/{len(participants)})</b>\n\n"
+        )
         text += f"👤 <b>{name}</b>\n"
         text += f"🆔 ID: <code>{user_id}</code>\n"
         if username:
@@ -2037,22 +2449,25 @@ def register_admin_participant_handlers(dp: Dispatcher, bot: Bot, admin_id: int)
             text += f"👤 Пол: {gender}\n"
         if category:
             category_emoji = {
-                "Элита": "🥇", "Классика": "🏃", "Женский": "👩", "Команда": "👥"
+                "Элита": "🥇",
+                "Классика": "🏃",
+                "Женский": "👩",
+                "Команда": "👥",
             }.get(category, "📂")
             text += f"📂 Категория: {category_emoji} {category}\n"
         if cluster:
-            cluster_emoji = {
-                "A": "🅰️", "B": "🅱️", "C": "🅲", "D": "🅳", "E": "🅴"
-            }.get(cluster, "🎯")
+            cluster_emoji = {"A": "🅰️", "B": "🅱️", "C": "🅲", "D": "🅳", "E": "🅴"}.get(
+                cluster, "🎯"
+            )
             text += f"🎯 Кластер: {cluster_emoji} {cluster}\n"
-        
+
         if current_bib:
             text += f"🏷 Текущий номер: <b>{current_bib}</b>\n"
-        
+
         text += "\n🏷 <b>Введите беговой номер или нажмите 'Пропустить':</b>\n"
         text += "• Только цифры (например: 001, 42, 123)\n"
         text += "• Ведущие нули будут сохранены"
-        
+
         await message.answer(text, reply_markup=create_bib_assignment_keyboard())
         await state.set_state(RegistrationForm.waiting_for_bib_assignment)
 
@@ -2063,45 +2478,53 @@ def register_admin_participant_handlers(dp: Dispatcher, bot: Bot, admin_id: int)
             await message.answer("❌ Доступ запрещен")
             await state.clear()
             return
-        
+
         data = await state.get_data()
         participants = data.get("participants", [])
         current_index = data.get("current_index", 0)
-        
+
         if current_index >= len(participants):
             await message.answer("❌ Ошибка: участник не найден")
             await state.clear()
             return
-        
+
         participant = participants[current_index]
         user_id = participant[0]
         name = participant[2]
-        
+
         # Get and validate bib number
         bib_input = message.text.strip()
-        
+
         if not bib_input.isdigit():
-            await message.answer("❌ Номер должен содержать только цифры. Попробуйте снова:")
+            await message.answer(
+                "❌ Номер должен содержать только цифры. Попробуйте снова:"
+            )
             return
-        
+
         # Check for duplicate bib numbers
         all_participants = get_all_participants()
-        existing_bibs = [p[7] for p in all_participants if p[7] is not None and p[0] != user_id]
-        
+        existing_bibs = [
+            p[7] for p in all_participants if p[7] is not None and p[0] != user_id
+        ]
+
         if bib_input in existing_bibs:
-            await message.answer(f"❌ Номер {bib_input} уже используется другим участником. Введите другой номер:")
+            await message.answer(
+                f"❌ Номер {bib_input} уже используется другим участником. Введите другой номер:"
+            )
             return
-        
+
         # Set bib number
         success = set_bib_number(user_id, bib_input)
-        
+
         if success:
             await message.answer(f"✅ Номер {bib_input} присвоен участнику {name}")
             logger.info(f"Номер {bib_input} присвоен участнику {name} (ID: {user_id})")
         else:
             await message.answer(f"❌ Ошибка при присвоении номера участнику {name}")
-            logger.error(f"Ошибка при присвоении номера {bib_input} участнику {name} (ID: {user_id})")
-        
+            logger.error(
+                f"Ошибка при присвоении номера {bib_input} участнику {name} (ID: {user_id})"
+            )
+
         # Move to next participant
         await state.update_data(current_index=current_index + 1)
         await show_participant_for_bib_assignment(message, state, bot)
@@ -2112,63 +2535,76 @@ def register_admin_participant_handlers(dp: Dispatcher, bot: Bot, admin_id: int)
         if callback_query.from_user.id != admin_id:
             await callback_query.answer("❌ Доступ запрещен")
             return
-        
+
         await callback_query.answer()
-        
+
         data = await state.get_data()
         current_index = data.get("current_index", 0)
-        
+
         # Move to next participant
         await state.update_data(current_index=current_index + 1)
         await callback_query.message.delete()
         await show_participant_for_bib_assignment(callback_query.message, state, bot)
 
-    async def show_bib_assignment_summary(message: Message, state: FSMContext, participants: list):
+    async def show_bib_assignment_summary(
+        message: Message, state: FSMContext, participants: list
+    ):
         """Show summary of bib assignment process"""
         # Count assigned bib numbers
         assigned_count = 0
         unassigned_participants = []
-        
+
         for participant in participants:
             user_id = participant[0]
             name = participant[2]
-            
+
             try:
                 from database import get_participant_by_user_id
+
                 full_participant = get_participant_by_user_id(user_id)
-                has_bib = full_participant and len(full_participant) > 7 and full_participant[7] is not None
-                
+                has_bib = (
+                    full_participant
+                    and len(full_participant) > 7
+                    and full_participant[7] is not None
+                )
+
                 if has_bib:
                     assigned_count += 1
                 else:
                     unassigned_participants.append(name)
             except:
                 unassigned_participants.append(name)
-        
+
         text = "✅ <b>Присвоение номеров завершено!</b>\n\n"
         text += f"📊 <b>Статистика:</b>\n"
         text += f"• Всего участников: {len(participants)}\n"
         text += f"• Присвоено номеров: {assigned_count}\n"
         text += f"• Без номеров: {len(unassigned_participants)}\n"
-        
+
         if unassigned_participants:
             text += f"\n❓ <b>Участники без номеров:</b>\n"
             for name in unassigned_participants[:10]:  # Show max 10 names
                 text += f"• {name}\n"
-            
+
             if len(unassigned_participants) > 10:
                 text += f"• ... и ещё {len(unassigned_participants) - 10}\n"
-        
+
         # Offer to send notifications if any numbers were assigned
         if assigned_count > 0:
             text += f"\n📢 <b>Уведомить участников о присвоенных номерах?</b>\n"
-            text += f"Будет отправлено {assigned_count} уведомлений участникам с номерами."
-            
-            await message.answer(text, reply_markup=create_bib_notification_confirmation_keyboard())
+            text += (
+                f"Будет отправлено {assigned_count} уведомлений участникам с номерами."
+            )
+
+            await message.answer(
+                text, reply_markup=create_bib_notification_confirmation_keyboard()
+            )
         else:
-            text += f"\n💡 Вы можете повторить процесс для назначения пропущенных номеров"
+            text += (
+                f"\n💡 Вы можете повторить процесс для назначения пропущенных номеров"
+            )
             await message.answer(text)
-        
+
         await state.clear()
 
     @dp.callback_query(F.data == "confirm_bib_notify")
@@ -2177,7 +2613,7 @@ def register_admin_participant_handlers(dp: Dispatcher, bot: Bot, admin_id: int)
         if callback_query.from_user.id != admin_id:
             await callback_query.answer("❌ Доступ запрещен")
             return
-        
+
         await callback_query.answer()
         await callback_query.message.delete()
         await send_bib_notifications(callback_query.message, bot)
@@ -2188,7 +2624,7 @@ def register_admin_participant_handlers(dp: Dispatcher, bot: Bot, admin_id: int)
         if callback_query.from_user.id != admin_id:
             await callback_query.answer("❌ Доступ запрещен")
             return
-        
+
         await callback_query.answer("Рассылка отменена")
         await callback_query.message.edit_text(
             "✅ Присвоение номеров завершено.\n\n"
@@ -2201,7 +2637,7 @@ def register_admin_participant_handlers(dp: Dispatcher, bot: Bot, admin_id: int)
         if callback_query.from_user.id != admin_id:
             await callback_query.answer("❌ Доступ запрещен")
             return
-        
+
         await callback_query.answer()
         await callback_query.message.delete()
         await send_bib_notifications(callback_query.message, bot)
@@ -2211,56 +2647,84 @@ def register_admin_participant_handlers(dp: Dispatcher, bot: Bot, admin_id: int)
         try:
             # Get all participants with bib numbers
             all_participants = get_all_participants()
-            participants_with_bibs = [p for p in all_participants if p[7] is not None]  # bib_number field
-            
+            participants_with_bibs = [
+                p for p in all_participants if p[7] is not None
+            ]  # bib_number field
+
             if not participants_with_bibs:
                 await message.answer(
                     "❌ <b>Нет участников с присвоенными номерами</b>\n\n"
                     "Сначала присвойте номера участникам через команду 'Присвоить номер'."
                 )
                 return
-            
+
             success_count = 0
             error_count = 0
-            
-            status_message = await message.answer("📢 <b>Рассылаю уведомления о номерах...</b>")
-            
+
+            status_message = await message.answer(
+                "📢 <b>Рассылаю уведомления о номерах...</b>"
+            )
+
             for participant in participants_with_bibs:
-                user_id, username, name, target_time, role, reg_date, payment_status, bib_number, result, gender, category, cluster = participant
-                
+                (
+                    user_id,
+                    username,
+                    name,
+                    target_time,
+                    role,
+                    reg_date,
+                    payment_status,
+                    bib_number,
+                    result,
+                    gender,
+                    category,
+                    cluster,
+                ) = participant
+
                 try:
                     # Build notification message
                     msg_text = "🏷 <b>Ваш беговой номер</b>\n\n"
                     msg_text += f"👤 Привет, <b>{name}</b>!\n\n"
                     msg_text += f"🏷 <b>Ваш номер для забега: {bib_number}</b>\n\n"
-                    
+
                     # Add category/cluster info if available
                     if category:
                         category_emoji = {
-                            "Элита": "🥇", "Классика": "🏃", "Женский": "👩", "Команда": "👥"
+                            "Элита": "🥇",
+                            "Классика": "🏃",
+                            "Женский": "👩",
+                            "Команда": "👥",
                         }.get(category, "📂")
                         msg_text += f"📂 Категория: {category_emoji} {category}\n"
-                    
+
                     if cluster:
                         cluster_emoji = {
-                            "A": "🅰️", "B": "🅱️", "C": "🅲", "D": "🅳", "E": "🅴"
+                            "A": "🅰️",
+                            "B": "🅱️",
+                            "C": "🅲",
+                            "D": "🅳",
+                            "E": "🅴",
                         }.get(cluster, "🎯")
                         msg_text += f"🎯 Стартовый кластер: {cluster_emoji} {cluster}\n"
-                    
+
                     msg_text += "\n🏃‍♀️ <b>Важно:</b>\n"
                     msg_text += "• Запомните свой номер\n"
                     msg_text += "• Возьмите номер на старте\n"
                     msg_text += "• Не передавайте номер другим\n\n"
                     msg_text += "🎯 Увидимся на старте!"
-                    
+
                     await bot.send_message(user_id, msg_text)
                     success_count += 1
-                    logger.info(f"Уведомление о номере {bib_number} отправлено {name} (ID: {user_id})")
-                    
+                    logger.info(
+                        f"Уведомление о номере {bib_number} отправлено {name} (ID: {user_id})"
+                    )
+
                 except Exception as e:
-                    logger.error(f"Ошибка отправки уведомления о номере участнику {name} (ID: {user_id}): {e}")
+                    logger.error(
+                        f"Ошибка отправки уведомления о номере участнику {name} (ID: {user_id}): {e}"
+                    )
                     error_count += 1
-            
+
             # Send summary
             await status_message.edit_text(
                 "✅ <b>Рассылка уведомлений о номерах завершена</b>\n\n"
@@ -2270,9 +2734,11 @@ def register_admin_participant_handlers(dp: Dispatcher, bot: Bot, admin_id: int)
                 f"• Всего участников с номерами: {len(participants_with_bibs)}\n\n"
                 f"💡 Участники получили информацию о своих номерах, категориях и кластерах"
             )
-            
-            logger.info(f"Рассылка номеров завершена: {success_count}/{len(participants_with_bibs)} успешно")
-            
+
+            logger.info(
+                f"Рассылка номеров завершена: {success_count}/{len(participants_with_bibs)} успешно"
+            )
+
         except Exception as e:
             logger.error(f"Ошибка при рассылке уведомлений о номерах: {e}")
             await message.answer(
@@ -2284,20 +2750,26 @@ def register_admin_participant_handlers(dp: Dispatcher, bot: Bot, admin_id: int)
         """Show protocol grouped by categories"""
         try:
             from database import get_participants_with_categories
-            
+
             participants = get_participants_with_categories()
-            runners = [p for p in participants if p[7] == "runner" and p[8]]  # role == runner and has result
-            
+            runners = [
+                p for p in participants if p[7] == "runner" and p[8]
+            ]  # role == runner and has result
+
             if not runners:
-                await event.message.answer("❌ Нет участников с результатами для протокола по категориям")
+                await event.message.answer(
+                    "❌ Нет участников с результатами для протокола по категориям"
+                )
                 return
-            
+
             # Check if we have categories
             has_categories = any(p[5] for p in runners)  # category field
             if not has_categories:
-                await event.message.answer("❌ Участники не имеют назначенных категорий")
+                await event.message.answer(
+                    "❌ Участники не имеют назначенных категорий"
+                )
                 return
-            
+
             # Group by categories
             categories = {}
             for runner in runners:
@@ -2305,30 +2777,36 @@ def register_admin_participant_handlers(dp: Dispatcher, bot: Bot, admin_id: int)
                 if category not in categories:
                     categories[category] = []
                 categories[category].append(runner)
-            
+
             # Generate protocol
             protocol_text = "🏆 <b>ПРОТОКОЛ ПО КАТЕГОРИЯМ</b>\n\n"
-            
-            category_order = ["Элита", "Классика", "Женский", "Команда", "Без категории"]
+
+            category_order = [
+                "Элита",
+                "Классика",
+                "Женский",
+                "Команда",
+                "Без категории",
+            ]
             for cat_name in category_order:
                 if cat_name not in categories:
                     continue
-                
+
                 cat_runners = categories[cat_name]
                 if not cat_runners:
                     continue
-                
+
                 category_emoji = {
                     "Элита": "🥇",
-                    "Классика": "🏃", 
+                    "Классика": "🏃",
                     "Женский": "👩",
                     "Команда": "👥",
-                    "Без категории": "❓"
+                    "Без категории": "❓",
                 }.get(cat_name, "📂")
-                
+
                 protocol_text += f"{category_emoji} <b>{cat_name.upper()}</b>\n"
                 protocol_text += "-" * 25 + "\n"
-                
+
                 # Sort by result (DNF last, then by time)
                 def sort_key(p):
                     result = p[8]  # result field
@@ -2340,20 +2818,20 @@ def register_admin_participant_handlers(dp: Dispatcher, bot: Bot, admin_id: int)
                         try:
                             # Convert MM:SS to seconds for sorting
                             if ":" in str(result):
-                                minutes, seconds = map(int, str(result).split(':'))
+                                minutes, seconds = map(int, str(result).split(":"))
                                 return (0, minutes * 60 + seconds)
                             else:
                                 return (1, float(result))
                         except:
                             return (3, 0)
-                
+
                 sorted_runners = sorted(cat_runners, key=sort_key)
-                
+
                 # Separate runners by result type
                 finishers = []
                 dnf_runners = []
                 no_result_runners = []
-                
+
                 for runner in sorted_runners:
                     result = runner[8] or ""
                     if result == "DNF":
@@ -2362,63 +2840,63 @@ def register_admin_participant_handlers(dp: Dispatcher, bot: Bot, admin_id: int)
                         no_result_runners.append(runner)
                     else:
                         finishers.append(runner)
-                
+
                 # Display finishers with places
                 place = 1
                 for runner in finishers:
                     name = runner[2]
                     result = runner[8]
                     bib_number = runner[9] if len(runner) > 9 else None
-                    
+
                     protocol_text += f"   {place}. {name}"
                     if bib_number:
                         protocol_text += f" (№{bib_number})"
                     protocol_text += f" - {result}\n"
                     place += 1
-                
+
                 # Display DNF runners at the end
                 for runner in dnf_runners:
                     name = runner[2]
                     bib_number = runner[9] if len(runner) > 9 else None
-                    
+
                     protocol_text += f"   DNF. {name}"
                     if bib_number:
                         protocol_text += f" (№{bib_number})"
                     protocol_text += " - DNF\n"
-                
+
                 # Display runners without results
                 for runner in no_result_runners:
                     name = runner[2]
                     bib_number = runner[9] if len(runner) > 9 else None
-                    
+
                     protocol_text += f"   —. {name}"
                     if bib_number:
                         protocol_text += f" (№{bib_number})"
                     protocol_text += " - —\n"
-                
+
                 protocol_text += "\n"
-            
+
             # Send protocol in chunks if too long
             if len(protocol_text) > 4000:
                 chunks = []
-                lines = protocol_text.split('\n')
+                lines = protocol_text.split("\n")
                 current_chunk = ""
-                
+
                 for line in lines:
-                    if len(current_chunk + line + '\n') > 4000:
+                    if len(current_chunk + line + "\n") > 4000:
                         chunks.append(current_chunk)
-                        current_chunk = line + '\n'
+                        current_chunk = line + "\n"
                     else:
-                        current_chunk += line + '\n'
-                
+                        current_chunk += line + "\n"
+
                 if current_chunk:
                     chunks.append(current_chunk)
-                
+
                 for chunk in chunks:
                     await event.message.answer(chunk)
             else:
                 await event.message.answer(protocol_text)
-                
+
         except Exception as e:
             logger.error(f"Ошибка при формировании протокола по категориям: {e}")
             await event.message.answer("❌ Произошла ошибка при формировании протокола")
