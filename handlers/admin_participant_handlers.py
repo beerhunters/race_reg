@@ -1241,7 +1241,7 @@ def register_admin_participant_handlers(dp: Dispatcher, bot: Bot, admin_id: int)
                     result = results[user_id_p]
                     
                     # Create beautiful result message
-                    result_text = f"🏃 <b>Ваш результат в Beer Mile!</b>\n\n"
+                    result_text = f"🏃 <b>Ваш результат в Пивном Квартале!</b>\n\n"
                     result_text += f"👤 <b>{name}</b>\n"
                     result_text += f"🏷 Номер: {bib_number}\n"
                     
@@ -1252,7 +1252,7 @@ def register_admin_participant_handlers(dp: Dispatcher, bot: Bot, admin_id: int)
                         result_text += f"🏁 Результат: <b>{result}</b>\n\n"
                         result_text += f"🎉 Поздравляем с финишем!"
                     
-                    result_text += f"\n\nБлагодарим за участие в Beer Mile! 🍺"
+                    result_text += f"\n\nБлагодарим за участие в Пивном Квартале! 🍺"
                     
                     try:
                         await bot.send_message(chat_id=user_id_p, text=result_text)

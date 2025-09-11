@@ -358,7 +358,7 @@ async def create_backup():
             metadata = {
                 "backup_date": current_time.isoformat(),
                 "backup_version": "1.0",
-                "description": "Beer Mile Registration Bot Backup",
+                "description": "Beer Block Registration Bot Backup",
                 "files_included": []
             }
             

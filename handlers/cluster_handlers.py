@@ -529,7 +529,7 @@ def register_cluster_handlers(dp: Dispatcher, bot: Bot, admin_id: int):
         moscow_tz = pytz.timezone("Europe/Moscow")
         current_time = datetime.now(moscow_tz)
         
-        document_text = "🏃‍♀️ <b>РАСПРЕДЕЛЕНИЕ УЧАСТНИКОВ BEER MILE</b>\n"
+        document_text = "🏃‍♀️ <b>РАСПРЕДЕЛЕНИЕ УЧАСТНИКОВ ПИВНОГО КВАРТАЛА</b>\n"
         document_text += f"📅 Создано: {current_time.strftime('%d.%m.%Y %H:%M')} МСК\n"
         document_text += "=" * 50 + "\n\n"
         
