@@ -4,7 +4,7 @@ import os
 from aiogram import Dispatcher, Bot, F
 from aiogram.filters import Command, StateFilter
 from aiogram.fsm.context import FSMContext
-from aiogram.types import Message, FSInputFile, CallbackQuery, InputMediaPhoto
+from aiogram.types import Message, FSInputFile, CallbackQuery, InputMediaPhoto, InlineKeyboardMarkup, InlineKeyboardButton
 from aiogram.exceptions import TelegramBadRequest, TelegramForbiddenError
 from .utils import (
     logger,
@@ -12,14 +12,112 @@ from .utils import (
     config,
     RegistrationForm,
     create_confirmation_keyboard,
+    get_participation_fee_text,
 )
 from database import (
     get_all_participants,
+    get_pending_registrations,
+    get_all_bot_users,
+    cleanup_blocked_user,
     delete_participant,
     delete_pending_registration,
     set_result,
     get_participant_by_user_id,
 )
+
+
+async def get_users_by_audience(audience_type):
+    """Get user lists based on audience type"""
+    user_lists = {
+        "participants": [],
+        "pending": [],
+        "waitlist": [],
+        "archives": [],
+        "bot_users": []
+    }
+    
+    if audience_type in ["participants", "all"]:
+        participants = get_all_participants()
+        user_lists["participants"] = [(p[0], p[1], p[2]) for p in participants]  # user_id, username, name
+    
+    if audience_type in ["pending", "all"]:
+        pending = get_pending_registrations()  
+        user_lists["pending"] = [(p[0], p[1], p[2]) for p in pending if len(p) >= 3]  # user_id, username, name
+    
+    if audience_type in ["waitlist", "all"]:
+        from database import get_waitlist_by_role
+        waitlist = get_waitlist_by_role()
+        user_lists["waitlist"] = [(w[1], w[2], w[3]) for w in waitlist]  # user_id, username, name
+    
+    if audience_type in ["archives", "all"]:
+        # Get users from archived tables
+        try:
+            from database import get_historical_participants
+            historical_users = get_historical_participants()
+            
+            # Get details for historical participants
+            archive_users = []
+            bot_users = get_all_bot_users()
+            bot_users_dict = {u[0]: (u[1], f"{u[2] or ''} {u[3] or ''}".strip()) for u in bot_users if len(u) >= 4}
+            
+            for user_id in historical_users:
+                if user_id in bot_users_dict:
+                    username, name = bot_users_dict[user_id]
+                    archive_users.append((user_id, username, name))
+            
+            user_lists["archives"] = archive_users
+        except Exception as e:
+            logger.error(f"Ошибка получения архивных пользователей: {e}")
+    
+    # Add bot_users for "all" audience type
+    if audience_type == "all":
+        try:
+            bot_users = get_all_bot_users()
+            
+            # Get all existing user_ids from other categories to avoid duplicates
+            existing_user_ids = set()
+            for category, users in user_lists.items():
+                if category != "bot_users":
+                    existing_user_ids.update([user[0] for user in users])
+            
+            # Add unique bot users
+            unique_bot_users = []
+            for bot_user in bot_users:
+                if len(bot_user) >= 4:
+                    user_id, username, first_name, last_name = bot_user[0], bot_user[1], bot_user[2], bot_user[3]
+                    if user_id not in existing_user_ids:
+                        name = f"{first_name or ''} {last_name or ''}".strip() or "Без имени"
+                        unique_bot_users.append((user_id, username, name))
+            
+            user_lists["bot_users"] = unique_bot_users
+        except Exception as e:
+            logger.error(f"Ошибка получения пользователей из bot_users: {e}")
+    
+    return user_lists
+
+
+def get_audience_name(audience_type):
+    """Get human-readable audience name"""
+    names = {
+        "participants": "Участники",
+        "pending": "Pending регистрации",
+        "waitlist": "Очередь ожидания", 
+        "archives": "Из архивов",
+        "all": "Все группы"
+    }
+    return names.get(audience_type, audience_type)
+
+
+def get_category_name(category):
+    """Get human-readable category name"""
+    names = {
+        "participants": "Участники",
+        "pending": "Pending",
+        "waitlist": "Очередь ожидания",
+        "archives": "Архивы",
+        "bot_users": "Остальные пользователи"
+    }
+    return names.get(category, category)
 
 
 def register_notification_handlers(dp: Dispatcher, bot: Bot, admin_id: int):
@@ -55,14 +153,14 @@ def register_notification_handlers(dp: Dispatcher, bot: Bot, admin_id: int):
                     await bot.send_photo(
                         chat_id=user_id,
                         photo=FSInputFile(afisha_path),
-                        caption=messages["notify_all_message"],
+                        caption=messages["notify_all_message"].format(fee=get_participation_fee_text()),
                         reply_markup=create_confirmation_keyboard(),
                         parse_mode="HTML",
                     )
                 else:
                     await bot.send_message(
                         chat_id=user_id,
-                        text=messages["notify_all_message"],
+                        text=messages["notify_all_message"].format(fee=get_participation_fee_text()),
                         reply_markup=create_confirmation_keyboard(),
                         parse_mode="HTML",
                     )
@@ -70,11 +168,7 @@ def register_notification_handlers(dp: Dispatcher, bot: Bot, admin_id: int):
                 success_count += 1
             except TelegramForbiddenError:
                 logger.warning(f"Пользователь user_id={user_id} заблокировал бот")
-                delete_participant(user_id)
-                delete_pending_registration(user_id)
-                logger.info(
-                    f"Пользователь user_id={user_id} удалён из таблиц participants и pending_registrations"
-                )
+                cleanup_blocked_user(user_id)
                 try:
                     await bot.send_message(
                         chat_id=admin_id,
@@ -104,189 +198,323 @@ def register_notification_handlers(dp: Dispatcher, bot: Bot, admin_id: int):
     @dp.message(Command("notify_with_text"))
     @dp.callback_query(F.data == "admin_notify_with_text")
     async def notify_with_text(event: [Message, CallbackQuery], state: FSMContext):
+        """Start notification with text/photo - first choose audience"""
         user_id = event.from_user.id
         if user_id != admin_id:
-            await event.answer(messages["notify_with_text_access_denied"])
+            await event.answer("❌ Доступ запрещен")
             return
         logger.info(f"Команда /notify_with_text от user_id={user_id}")
+        
         if isinstance(event, CallbackQuery):
             await event.message.delete()
             message = event.message
+            await event.answer()
         else:
             await event.delete()
             message = event
-        participants = get_all_participants()
-        if not participants:
-            logger.info("Нет зарегистрированных участников для уведомления")
-            await message.answer(messages["notify_with_text_no_participants"])
-            return
-        await message.answer(messages["notify_with_text_prompt"])
-        await state.set_state(RegistrationForm.waiting_for_notify_with_text_message)
+            
+        from .utils import create_notify_audience_keyboard
+        
+        text = "✏️ <b>Уведомить с текстом/фото</b>\n\n"
+        text += "📋 Выберите аудиторию для отправки:\n\n"
+        text += "👥 <b>Участники</b> - зарегистрированные участники\n"
+        text += "⏳ <b>Pending</b> - незавершенные регистрации\n"  
+        text += "📋 <b>Очередь ожидания</b> - пользователи в waitlist\n"
+        text += "📂 <b>Из архивов</b> - участники прошлых гонок\n"
+        text += "🌍 <b>Все группы</b> - все вышеперечисленные\n"
+        
+        await message.answer(text, reply_markup=create_notify_audience_keyboard())
+        await state.set_state(RegistrationForm.waiting_for_notify_audience_selection)
 
-    @dp.message(StateFilter(RegistrationForm.waiting_for_notify_with_text_message))
-    async def process_notify_with_text_message(message: Message, state: FSMContext):
-        logger.info(
-            f"Получен текст рассылки для /notify_with_text от user_id={message.from_user.id}"
+    @dp.callback_query(F.data.startswith("audience_"), RegistrationForm.waiting_for_notify_audience_selection)
+    async def process_audience_selection(callback: CallbackQuery, state: FSMContext):
+        """Process audience selection for notifications"""
+        if callback.from_user.id != admin_id:
+            await callback.answer("❌ Доступ запрещен")
+            return
+            
+        audience_type = callback.data.replace("audience_", "")
+        await callback.message.delete()
+        
+        # Get user lists based on selection
+        user_lists = await get_users_by_audience(audience_type)
+        total_users = sum(len(users) for users in user_lists.values())
+        
+        if total_users == 0:
+            await callback.message.answer(
+                f"❌ <b>Нет пользователей в выбранной категории</b>\n\n"
+                f"Выбранная аудитория: {get_audience_name(audience_type)}"
+            )
+            await state.clear()
+            await callback.answer()
+            return
+        
+        # Store audience info in state
+        await state.update_data(
+            audience_type=audience_type,
+            user_lists=user_lists,
+            total_users=total_users
         )
+        
+        # Show stats and ask for message
+        stats_text = f"✏️ <b>Уведомить с текстом/фото</b>\n\n"
+        stats_text += f"🎯 <b>Аудитория:</b> {get_audience_name(audience_type)}\n\n"
+        stats_text += f"📊 <b>Статистика получателей:</b>\n"
+        
+        for category, users in user_lists.items():
+            if users:
+                stats_text += f"• {get_category_name(category)}: {len(users)}\n"
+        
+        stats_text += f"• <b>Всего:</b> {total_users}\n\n"
+        stats_text += "✏️ Введите текст сообщения:"
+        
+        await callback.message.answer(stats_text)
+        await state.set_state(RegistrationForm.waiting_for_notify_advanced_message)
+        await callback.answer()
+
+    @dp.callback_query(F.data == "cancel_notify")
+    async def cancel_notification(callback: CallbackQuery, state: FSMContext):
+        """Cancel notification process"""
+        await callback.message.delete()
+        await callback.message.answer("❌ Отправка уведомлений отменена.")
+        await state.clear()
+        await callback.answer()
+
+    @dp.message(RegistrationForm.waiting_for_notify_advanced_message)
+    async def process_advanced_message_text(message: Message, state: FSMContext):
+        """Process text for advanced notification"""
+        if message.from_user.id != admin_id:
+            await message.answer("❌ Доступ запрещен")
+            await state.clear()
+            return
+            
+        if not message.text:
+            await message.answer("❌ Сообщение должно содержать текст. Попробуйте снова:")
+            return
+            
         notify_text = message.text.strip()
         if len(notify_text) > 4096:
-            logger.warning(
-                f"Текст рассылки слишком длинный: {len(notify_text)} символов"
-            )
-            await message.answer("Текст слишком длинный. Максимум 4096 символов.")
-            await state.clear()
+            await message.answer("❌ Сообщение слишком длинное. Максимум 4096 символов. Попробуйте снова:")
             return
+        
+        # Save text to state
         await state.update_data(notify_text=notify_text)
-        await message.answer(messages["notify_with_text_photo_prompt"])
-        await state.set_state(RegistrationForm.waiting_for_notify_with_text_photo)
-
-    @dp.message(
-        StateFilter(RegistrationForm.waiting_for_notify_with_text_photo), F.photo
-    )
-    async def process_notify_with_text_photo(message: Message, state: FSMContext):
-        logger.info(
-            f"Получено изображение для /notify_with_text от user_id={message.from_user.id}"
+        
+        # Ask about photos
+        keyboard = InlineKeyboardMarkup(
+            inline_keyboard=[
+                [
+                    InlineKeyboardButton(text="📷 Да, добавить фото", callback_data="add_photos_yes"),
+                    InlineKeyboardButton(text="📝 Нет, только текст", callback_data="add_photos_no"),
+                ],
+                [
+                    InlineKeyboardButton(text="❌ Отмена", callback_data="cancel_notify"),
+                ],
+            ]
         )
-        user_data = await state.get_data()
-        notify_text = user_data.get("notify_text")
-        participants = get_all_participants()
-        success_count = 0
-        try:
-            photo = message.photo[-1]
-            file = await bot.get_file(photo.file_id)
-            file_path = file.file_path
-            temp_photo_path = "/app/images/temp_notify_photo.jpeg"
-            await bot.download_file(file_path, temp_photo_path)
-            os.chmod(temp_photo_path, 0o644)
-            logger.info(f"Изображение сохранено временно в {temp_photo_path}")
-            for participant in participants:
-                user_id = participant[0]
-                name = participant[2]
-                username = participant[1] or "не указан"
-                try:
-                    await bot.send_photo(
-                        chat_id=user_id,
-                        photo=FSInputFile(temp_photo_path),
-                        caption=notify_text,
-                        parse_mode="HTML",
-                    )
-                    logger.info(
-                        f"Уведомление с фото отправлено пользователю user_id={user_id}"
-                    )
-                    success_count += 1
-                except TelegramForbiddenError:
-                    logger.warning(f"Пользователь user_id={user_id} заблокировал бот")
-                    delete_participant(user_id)
-                    delete_pending_registration(user_id)
-                    logger.info(
-                        f"Пользователь user_id={user_id} удалён из таблиц participants и pending_registrations"
-                    )
-                    try:
-                        await bot.send_message(
-                            chat_id=admin_id,
-                            text=messages["admin_blocked_notification"].format(
-                                name=name, username=username, user_id=user_id
-                            ),
-                        )
-                        logger.info(
-                            f"Уведомление администратору (admin_id={admin_id}) о блокировке отправлено"
-                        )
-                    except Exception as admin_e:
-                        logger.error(
-                            f"Ошибка при отправке уведомления администратору: {admin_e}"
-                        )
-                except TelegramBadRequest as e:
-                    if "chat not found" in str(e).lower():
-                        logger.warning(
-                            f"Чат с пользователем user_id={user_id} не найден, уведомление пропущено"
-                        )
-                    else:
-                        logger.error(
-                            f"Ошибка при отправке уведомления пользователю user_id={user_id}: {e}"
-                        )
-            os.remove(temp_photo_path)
-            logger.info(f"Временное изображение {temp_photo_path} удалено")
-        except Exception as e:
-            logger.error(
-                f"Ошибка при сохранении изображения для /notify_with_text: {e}"
+        
+        text = "✅ <b>Текст сохранен</b>\n\n"
+        text += "📷 <b>Добавить фотографии к сообщению?</b>\n\n"
+        text += "Вы можете добавить до 10 фотографий, которые будут отправлены вместе с текстом."
+        
+        await message.answer(text, reply_markup=keyboard)
+
+    @dp.callback_query(F.data == "add_photos_yes")
+    async def request_photos(callback: CallbackQuery, state: FSMContext):
+        """Request photos for notification"""
+        await callback.message.delete()
+        
+        # Initialize photos list
+        await state.update_data(photos=[])
+        
+        text = "📷 <b>Загрузка фотографий</b>\n\n"
+        text += "📤 Отправьте фотографии для уведомления (до 10 штук)\n\n"
+        text += "📋 <b>Как загрузить:</b>\n"
+        text += "• Отправляйте по одной фотографии\n"
+        text += "• Можно отправить несколько подряд\n"
+        text += "• Максимум 10 фотографий\n\n"
+        text += "✅ После загрузки всех фото нажмите кнопку \"Готово\"\n"
+        
+        keyboard = InlineKeyboardMarkup(
+            inline_keyboard=[
+                [
+                    InlineKeyboardButton(text="✅ Готово, отправить", callback_data="photos_done"),
+                    InlineKeyboardButton(text="❌ Отмена", callback_data="cancel_notify"),
+                ],
+            ]
+        )
+        
+        await callback.message.answer(text, reply_markup=keyboard)
+        await state.set_state(RegistrationForm.waiting_for_notify_advanced_photo)
+        await callback.answer()
+
+    @dp.callback_query(F.data == "add_photos_no")
+    async def send_text_only_notification(callback: CallbackQuery, state: FSMContext):
+        """Send notification with text only"""
+        await callback.answer()  # Отвечаем сразу, чтобы избежать timeout
+        await callback.message.delete()
+        await send_advanced_notification(callback.message, state, with_photos=False)
+
+    @dp.message(RegistrationForm.waiting_for_notify_advanced_photo, F.photo)
+    async def process_notification_photo(message: Message, state: FSMContext):
+        """Process uploaded photos for notification"""
+        if message.from_user.id != admin_id:
+            await message.answer("❌ Доступ запрещен")
+            return
+            
+        data = await state.get_data()
+        photos = data.get('photos', [])
+        
+        if len(photos) >= 10:
+            await message.answer("❌ Максимум 10 фотографий. Нажмите \"Готово\" для отправки.")
+            return
+        
+        # Get the largest photo size
+        photo = message.photo[-1]
+        photos.append({
+            'file_id': photo.file_id,
+            'file_unique_id': photo.file_unique_id
+        })
+        
+        await state.update_data(photos=photos)
+        
+        # Just silently accept the photo without any status messages
+        # The user will see their uploaded photos and the original instruction message remains
+        
+        if len(photos) >= 10:
+            # Only when 10 photos reached, show status message
+            await message.answer(f"✅ Фото {len(photos)}/10 загружено")
+            
+            # Then show completion message with buttons  
+            text = "📷 Загружено максимальное количество фото. Нажмите \"Готово\" для отправки."
+            
+            keyboard = InlineKeyboardMarkup(
+                inline_keyboard=[
+                    [
+                        InlineKeyboardButton(text="✅ Готово, отправить", callback_data="photos_done"),
+                        InlineKeyboardButton(text="❌ Отмена", callback_data="cancel_notify"),
+                    ],
+                ]
             )
-            await message.answer("Ошибка при сохранении изображения. Попробуйте снова.")
+            
+            await message.answer(text, reply_markup=keyboard)
+
+    @dp.message(RegistrationForm.waiting_for_notify_advanced_photo)
+    async def handle_non_photo_in_photo_mode(message: Message, state: FSMContext):
+        """Handle non-photo messages in photo upload mode"""
+        if message.from_user.id != admin_id:
+            await message.answer("❌ Доступ запрещен")
+            return
+            
+        await message.answer(
+            "📷 Ожидается загрузка фотографий.\n\n"
+            "• Отправьте фотографию для добавления к уведомлению\n"
+            "• Или нажмите \"Готово\" для отправки уже загруженных фото\n"
+            "• Или \"Отмена\" для прекращения процесса"
+        )
+
+    @dp.callback_query(F.data == "photos_done")
+    async def send_photos_notification(callback: CallbackQuery, state: FSMContext):
+        """Send notification with photos"""
+        await callback.answer()  # Отвечаем сразу, чтобы избежать timeout
+        await callback.message.delete()
+        
+        data = await state.get_data()
+        photos = data.get('photos', [])
+        
+        if not photos:
+            await callback.message.answer("❌ Не загружено ни одного фото. Отменяю отправку.")
             await state.clear()
             return
-        await message.answer(
-            messages["notify_with_text_success"].format(count=success_count)
-        )
-        logger.info(f"Уведомления отправлены {success_count} участникам")
-        await state.clear()
+            
+        await send_advanced_notification(callback.message, state, with_photos=True)
 
-    @dp.message(
-        StateFilter(RegistrationForm.waiting_for_notify_with_text_photo),
-        Command("skip"),
-    )
-    async def process_notify_with_text_skip_photo(message: Message, state: FSMContext):
-        logger.info(
-            f"Пропущено изображение для /notify_with_text от user_id={message.from_user.id}"
-        )
-        user_data = await state.get_data()
-        notify_text = user_data.get("notify_text")
-        participants = get_all_participants()
+    async def send_advanced_notification(message: Message, state: FSMContext, with_photos=False):
+        """Send advanced notification to selected audience"""
+        data = await state.get_data()
+        notify_text = data.get('notify_text', '')
+        user_lists = data.get('user_lists', {})
+        audience_type = data.get('audience_type', '')
+        photos = data.get('photos', []) if with_photos else []
+        
+        if with_photos:
+            status_text = f"📤 <b>Отправка уведомлений с фото...</b>\n\n"
+            status_text += f"📷 Фотографий: {len(photos)}\n"
+        else:
+            status_text = f"📤 <b>Отправка текстовых уведомлений...</b>\n\n"
+            
+        status_text += f"🎯 Аудитория: {get_audience_name(audience_type)}\n"
+        status_text += f"👥 Получателей: {sum(len(users) for users in user_lists.values())}\n\n"
+        status_text += "Отправляю сообщения..."
+        
+        await message.answer(status_text)
+        
         success_count = 0
-        for participant in participants:
-            user_id = participant[0]
-            name = participant[2]
-            username = participant[1] or "не указан"
-            try:
-                await bot.send_message(
-                    chat_id=user_id, text=notify_text, parse_mode="HTML"
-                )
-                logger.info(
-                    f"Уведомление без фото отправлено пользователю user_id={user_id}"
-                )
-                success_count += 1
-            except TelegramForbiddenError:
-                logger.warning(f"Пользователь user_id={user_id} заблокировал бот")
-                delete_participant(user_id)
-                delete_pending_registration(user_id)
-                logger.info(
-                    f"Пользователь user_id={user_id} удалён из таблиц participants и pending_registrations"
-                )
+        blocked_count = 0
+        total_sent = 0
+        
+        # Send to all user categories
+        for category, users in user_lists.items():
+            if not users:
+                continue
+                
+            for user_id, username, name in users:
                 try:
-                    await bot.send_message(
-                        chat_id=admin_id,
-                        text=messages["admin_blocked_notification"].format(
-                            name=name, username=username, user_id=user_id
-                        ),
-                    )
-                    logger.info(
-                        f"Уведомление администратору (admin_id={admin_id}) о блокировке отправлено"
-                    )
-                except Exception as admin_e:
-                    logger.error(
-                        f"Ошибка при отправке уведомления администратору: {admin_e}"
-                    )
-            except TelegramBadRequest as e:
-                if "chat not found" in str(e).lower():
-                    logger.warning(
-                        f"Чат с пользователем user_id={user_id} не найден, уведомление пропущено"
-                    )
-                else:
-                    logger.error(
-                        f"Ошибка при отправке уведомления пользователю user_id={user_id}: {e}"
-                    )
-        await message.answer(
-            messages["notify_with_text_success"].format(count=success_count)
-        )
-        logger.info(f"Уведомления отправлены {success_count} участникам")
+                    if with_photos and photos:
+                        # Prepare media group
+                        from aiogram.types import InputMediaPhoto
+                        media = []
+                        
+                        # First photo with caption
+                        media.append(InputMediaPhoto(
+                            media=photos[0]['file_id'],
+                            caption=notify_text,
+                            parse_mode="HTML"
+                        ))
+                        
+                        # Other photos without caption
+                        for photo in photos[1:]:
+                            media.append(InputMediaPhoto(media=photo['file_id']))
+                        
+                        await bot.send_media_group(chat_id=user_id, media=media)
+                    else:
+                        # Send text only
+                        await bot.send_message(
+                            chat_id=user_id,
+                            text=notify_text,
+                            parse_mode="HTML"
+                        )
+                    
+                    success_count += 1
+                    logger.info(f"Расширенное уведомление отправлено пользователю {name or 'Unknown'} (ID: {user_id}) из категории {category}")
+                    
+                except Exception as e:
+                    logger.warning(f"Ошибка отправки пользователю {name or 'Unknown'} (ID: {user_id}): {e}")
+                    blocked_count += 1
+                
+                total_sent += 1
+        
+        # Send final statistics
+        result_text = f"✅ <b>Рассылка завершена</b>\n\n"
+        result_text += f"📊 <b>Статистика:</b>\n"
+        
+        for category, users in user_lists.items():
+            if users:
+                result_text += f"• {get_category_name(category)}: {len(users)}\n"
+        
+        result_text += f"\n📈 <b>Результат отправки:</b>\n"
+        result_text += f"• ✅ Успешно: {success_count}\n"
+        result_text += f"• ❌ Не доставлено: {blocked_count}\n"
+        result_text += f"• 📊 Всего: {total_sent}\n"
+        
+        if with_photos:
+            result_text += f"• 📷 Фотографий: {len(photos)}\n"
+        
+        await message.answer(result_text)
         await state.clear()
+        logger.info(f"Расширенная рассылка завершена: {success_count}/{total_sent} успешно, фото: {len(photos) if with_photos else 0}")
 
-    @dp.message(StateFilter(RegistrationForm.waiting_for_notify_with_text_photo))
-    async def process_notify_with_text_invalid(message: Message, state: FSMContext):
-        logger.info(
-            f"Некорректный ввод в состоянии waiting_for_notify_with_text_photo от user_id={message.from_user.id}"
-        )
-        await message.answer(
-            "Пожалуйста, отправьте фото или используйте /skip, чтобы пропустить."
-        )
+
 
     @dp.message(Command("notify_unpaid"))
     @dp.callback_query(F.data == "admin_notify_unpaid")
@@ -375,11 +603,7 @@ def register_notification_handlers(dp: Dispatcher, bot: Bot, admin_id: int):
                 success_count += 1
             except TelegramForbiddenError:
                 logger.warning(f"Пользователь user_id={user_id} заблокировал бот")
-                delete_participant(user_id)
-                delete_pending_registration(user_id)
-                logger.info(
-                    f"Пользователь user_id={user_id} удалён из таблиц participants и pending_registrations"
-                )
+                cleanup_blocked_user(user_id)
                 try:
                     await bot.send_message(
                         chat_id=admin_id,
