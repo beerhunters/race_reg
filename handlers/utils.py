@@ -52,13 +52,13 @@ logger = logging.getLogger(__name__)
 # Стандартизированные функции логирования
 class LogHelper:
     """Helper class for standardized logging patterns"""
-    
+
     @staticmethod
     def command_received(command: str, user_id: int, username: str = None):
         """Log when a command is received"""
         user_info = f"@{username}" if username else f"ID:{user_id}"
         logger.info(f"Command '{command}' received from user {user_info}")
-    
+
     @staticmethod
     def admin_action(action: str, admin_id: int, details: str = None):
         """Log admin actions"""
@@ -66,9 +66,15 @@ class LogHelper:
         if details:
             msg += f" - {details}"
         logger.info(msg)
-    
+
     @staticmethod
-    def database_operation(operation: str, table: str, user_id: int = None, success: bool = True, details: str = None):
+    def database_operation(
+        operation: str,
+        table: str,
+        user_id: int = None,
+        success: bool = True,
+        details: str = None,
+    ):
         """Log database operations"""
         status = "SUCCESS" if success else "FAILED"
         msg = f"DB {operation} on {table}: {status}"
@@ -76,29 +82,35 @@ class LogHelper:
             msg += f" (user_id={user_id})"
         if details:
             msg += f" - {details}"
-        
+
         if success:
             logger.info(msg)
         else:
             logger.error(msg)
-    
+
     @staticmethod
-    def user_registration(user_id: int, username: str, name: str, role: str, success: bool = True):
+    def user_registration(
+        user_id: int, username: str, name: str, role: str, success: bool = True
+    ):
         """Log user registration attempts"""
         user_info = f"{name} (@{username}, ID:{user_id})"
         if success:
             logger.info(f"User registration SUCCESS: {user_info} as {role}")
         else:
             logger.error(f"User registration FAILED: {user_info} as {role}")
-    
+
     @staticmethod
-    def notification_sent(notification_type: str, user_id: int, success: bool = True, error: str = None):
+    def notification_sent(
+        notification_type: str, user_id: int, success: bool = True, error: str = None
+    ):
         """Log notification sending"""
         if success:
             logger.info(f"Notification sent: {notification_type} to user_id={user_id}")
         else:
-            logger.error(f"Notification failed: {notification_type} to user_id={user_id} - {error}")
-    
+            logger.error(
+                f"Notification failed: {notification_type} to user_id={user_id} - {error}"
+            )
+
     @staticmethod
     def system_event(event: str, details: str = None):
         """Log system-level events"""
@@ -106,7 +118,7 @@ class LogHelper:
         if details:
             msg += f" - {details}"
         logger.info(msg)
-    
+
     @staticmethod
     def validation_error(field: str, value: str, error: str, user_id: int = None):
         """Log validation errors"""
@@ -114,7 +126,7 @@ class LogHelper:
         if user_id:
             msg += f" (user_id={user_id})"
         logger.warning(msg)
-    
+
     @staticmethod
     def handler_registration(handler_name: str):
         """Log handler registration"""
@@ -127,7 +139,7 @@ log = LogHelper()
 try:
     with open("messages.json", "r", encoding="utf-8") as f:
         messages = json.load(f)
-    logger.info("Файл messages.json успешно загружен")
+    # logger.info("Файл messages.json успешно загружен")
 except FileNotFoundError:
     logger.error("Файл messages.json не найден")
     raise
@@ -138,7 +150,7 @@ except json.JSONDecodeError as e:
 try:
     with open("config.json", "r", encoding="utf-8") as f:
         config = json.load(f)
-    logger.info("Файл config.json успешно загружен")
+    # logger.info("Файл config.json успешно загружен")
 except FileNotFoundError:
     logger.error("Файл config.json не найден")
     raise
@@ -178,40 +190,40 @@ class RegistrationForm(StatesGroup):
     waiting_for_gender_protocol = State()
     waiting_for_notify_all_interacted_message = State()
     waiting_for_notify_all_interacted_photo = State()
-    
+
     # Participant notification states
     waiting_for_notify_participants_message = State()
-    
+
     # Advanced notification states
     waiting_for_notify_audience_selection = State()
     waiting_for_notify_advanced_message = State()
     waiting_for_notify_advanced_photo = State()
-    
+
     # Results recording states
     waiting_for_results_start = State()
     waiting_for_participant_result = State()
     waiting_for_results_send_confirmation = State()
-    
+
     # Profile editing states
     waiting_for_edit_field_selection = State()
     waiting_for_new_name = State()
     waiting_for_new_target_time = State()
     waiting_for_new_gender = State()
     waiting_for_edit_confirmation = State()
-    
+
     # Archive states
     waiting_for_archive_date = State()
-    
+
     # Cluster and category states
     waiting_for_category_assignment = State()
     waiting_for_cluster_assignment = State()
-    
+
     # Sequential bib assignment states
     waiting_for_bib_assignment = State()
-    
+
     # Backup restore states
     restore_backup = State()
-    
+
     processed = State()
 
 
@@ -322,7 +334,9 @@ def create_edit_profile_keyboard():
         inline_keyboard=[
             [
                 InlineKeyboardButton(text="📝 Имя", callback_data="edit_name"),
-                InlineKeyboardButton(text="⏰ Целевое время", callback_data="edit_target_time"),
+                InlineKeyboardButton(
+                    text="⏰ Целевое время", callback_data="edit_target_time"
+                ),
             ],
             [
                 InlineKeyboardButton(text="👤 Пол", callback_data="edit_gender"),
@@ -340,8 +354,12 @@ def create_admin_edit_approval_keyboard(request_id: int):
     keyboard = InlineKeyboardMarkup(
         inline_keyboard=[
             [
-                InlineKeyboardButton(text="✅ Одобрить", callback_data=f"approve_edit_{request_id}"),
-                InlineKeyboardButton(text="❌ Отклонить", callback_data=f"reject_edit_{request_id}"),
+                InlineKeyboardButton(
+                    text="✅ Одобрить", callback_data=f"approve_edit_{request_id}"
+                ),
+                InlineKeyboardButton(
+                    text="❌ Отклонить", callback_data=f"reject_edit_{request_id}"
+                ),
             ],
         ]
     )
@@ -353,7 +371,9 @@ def create_edit_confirmation_keyboard():
     keyboard = InlineKeyboardMarkup(
         inline_keyboard=[
             [
-                InlineKeyboardButton(text="✅ Подтвердить", callback_data="confirm_edit"),
+                InlineKeyboardButton(
+                    text="✅ Подтвердить", callback_data="confirm_edit"
+                ),
                 InlineKeyboardButton(text="❌ Отмена", callback_data="cancel_edit"),
             ],
         ]
@@ -373,12 +393,8 @@ def create_admin_commands_keyboard():
         InlineKeyboardButton(
             text="📢 Уведомления", callback_data="category_notifications"
         ),
-        InlineKeyboardButton(
-            text="⚙️ Настройки", callback_data="category_settings"
-        ),
-        InlineKeyboardButton(
-            text="🎨 Медиа", callback_data="category_media"
-        ),
+        InlineKeyboardButton(text="⚙️ Настройки", callback_data="category_settings"),
+        InlineKeyboardButton(text="🎨 Медиа", callback_data="category_media"),
         InlineKeyboardButton(
             text="💾 Резервные копии", callback_data="admin_backup_settings"
         ),
@@ -398,11 +414,13 @@ def create_participants_category_keyboard():
         InlineKeyboardButton(text="📊 Статистика", callback_data="admin_stats"),
         InlineKeyboardButton(text="✅ Подтвердить оплату", callback_data="admin_paid"),
         InlineKeyboardButton(text="🔢 Присвоить номер", callback_data="admin_set_bib"),
-        InlineKeyboardButton(text="📢 Уведомить о номерах", callback_data="admin_notify_bibs"),
-        InlineKeyboardButton(text="🏃 Записать результаты", callback_data="admin_results"),
         InlineKeyboardButton(
-            text="🗑 Удалить участника", callback_data="admin_remove"
+            text="📢 Уведомить о номерах", callback_data="admin_notify_bibs"
         ),
+        InlineKeyboardButton(
+            text="🏃 Записать результаты", callback_data="admin_results"
+        ),
+        InlineKeyboardButton(text="🗑 Удалить участника", callback_data="admin_remove"),
         InlineKeyboardButton(text="📄 Экспорт в CSV", callback_data="admin_export"),
         InlineKeyboardButton(text="🏠 Главное меню", callback_data="main_menu"),
     ]
@@ -413,9 +431,13 @@ def create_race_category_keyboard():
     """Create race category keyboard"""
     commands = [
         InlineKeyboardButton(text="🏆 Протокол", callback_data="admin_protocol"),
-        InlineKeyboardButton(text="📂 Архивировать гонку", callback_data="admin_archive_race"),
+        InlineKeyboardButton(
+            text="📂 Архивировать гонку", callback_data="admin_archive_race"
+        ),
         InlineKeyboardButton(text="📈 Прошлые гонки", callback_data="admin_past_races"),
-        InlineKeyboardButton(text="📋 Очередь ожидания", callback_data="admin_waitlist"),
+        InlineKeyboardButton(
+            text="📋 Очередь ожидания", callback_data="admin_waitlist"
+        ),
         InlineKeyboardButton(text="🎯 Кластеры", callback_data="admin_clusters"),
         InlineKeyboardButton(text="🏠 Главное меню", callback_data="main_menu"),
     ]
@@ -425,9 +447,15 @@ def create_race_category_keyboard():
 def create_notifications_category_keyboard():
     """Create notifications category keyboard"""
     commands = [
-        InlineKeyboardButton(text="📢 Уведомить участников", callback_data="admin_notify_participants"),
-        InlineKeyboardButton(text="✏️ Уведомить с текстом/фото", callback_data="admin_notify_with_text"),
-        InlineKeyboardButton(text="💰 Напомнить об оплате", callback_data="admin_notify_unpaid"),
+        InlineKeyboardButton(
+            text="📢 Уведомить участников", callback_data="admin_notify_participants"
+        ),
+        InlineKeyboardButton(
+            text="✏️ Уведомить с текстом/фото", callback_data="admin_notify_with_text"
+        ),
+        InlineKeyboardButton(
+            text="💰 Напомнить об оплате", callback_data="admin_notify_unpaid"
+        ),
         InlineKeyboardButton(text="🏠 Главное меню", callback_data="main_menu"),
     ]
     return InlineKeyboardMarkup(inline_keyboard=[[cmd] for cmd in commands])
@@ -438,15 +466,25 @@ def create_notify_audience_keyboard():
     keyboard = InlineKeyboardMarkup(
         inline_keyboard=[
             [
-                InlineKeyboardButton(text="👥 Участники", callback_data="audience_participants"),
-                InlineKeyboardButton(text="⏳ Pending", callback_data="audience_pending"),
+                InlineKeyboardButton(
+                    text="👥 Участники", callback_data="audience_participants"
+                ),
+                InlineKeyboardButton(
+                    text="⏳ Pending", callback_data="audience_pending"
+                ),
             ],
             [
-                InlineKeyboardButton(text="📋 Очередь ожидания", callback_data="audience_waitlist"),
-                InlineKeyboardButton(text="📂 Из архивов", callback_data="audience_archives"),
+                InlineKeyboardButton(
+                    text="📋 Очередь ожидания", callback_data="audience_waitlist"
+                ),
+                InlineKeyboardButton(
+                    text="📂 Из архивов", callback_data="audience_archives"
+                ),
             ],
             [
-                InlineKeyboardButton(text="🌍 Все группы", callback_data="audience_all"),
+                InlineKeyboardButton(
+                    text="🌍 Все группы", callback_data="audience_all"
+                ),
             ],
             [
                 InlineKeyboardButton(text="❌ Отмена", callback_data="cancel_notify"),
@@ -459,9 +497,16 @@ def create_notify_audience_keyboard():
 def create_settings_category_keyboard():
     """Create settings category keyboard"""
     commands = [
-        InlineKeyboardButton(text="🔢 Изменить лимит участников", callback_data="admin_edit_runners"),
-        InlineKeyboardButton(text="📅 Установить дату окончания регистрации", callback_data="admin_set_reg_end_date"),
-        InlineKeyboardButton(text="💰 Изменить цену участия", callback_data="admin_set_price"),
+        InlineKeyboardButton(
+            text="🔢 Изменить лимит участников", callback_data="admin_edit_runners"
+        ),
+        InlineKeyboardButton(
+            text="📅 Установить дату окончания регистрации",
+            callback_data="admin_set_reg_end_date",
+        ),
+        InlineKeyboardButton(
+            text="💰 Изменить цену участия", callback_data="admin_set_price"
+        ),
         InlineKeyboardButton(text="🏠 Главное меню", callback_data="main_menu"),
     ]
     return InlineKeyboardMarkup(inline_keyboard=[[cmd] for cmd in commands])
@@ -470,10 +515,19 @@ def create_settings_category_keyboard():
 def create_media_category_keyboard():
     """Create media category keyboard"""
     commands = [
-        InlineKeyboardButton(text="ℹ️ Обновить информационное сообщение", callback_data="admin_info"),
-        InlineKeyboardButton(text="👋 Обновить приветственное сообщение", callback_data="admin_welcome"),
-        InlineKeyboardButton(text="🖼 Обновить афишу", callback_data="admin_create_afisha"),
-        InlineKeyboardButton(text="🤝 Обновить спонсорское изображение", callback_data="admin_update_sponsor"),
+        InlineKeyboardButton(
+            text="ℹ️ Обновить информационное сообщение", callback_data="admin_info"
+        ),
+        InlineKeyboardButton(
+            text="👋 Обновить приветственное сообщение", callback_data="admin_welcome"
+        ),
+        InlineKeyboardButton(
+            text="🖼 Обновить афишу", callback_data="admin_create_afisha"
+        ),
+        InlineKeyboardButton(
+            text="🤝 Обновить спонсорское изображение",
+            callback_data="admin_update_sponsor",
+        ),
         InlineKeyboardButton(text="🏠 Главное меню", callback_data="main_menu"),
     ]
     return InlineKeyboardMarkup(inline_keyboard=[[cmd] for cmd in commands])
@@ -483,12 +537,13 @@ def get_participation_fee_text():
     """Get formatted participation fee text from database"""
     try:
         from database import get_setting
+
         fee = get_setting("participation_price")
-        
+
         if fee is None:
             # Fallback to config if not set in database
             fee = config.get("participation_fee", 500)
-        
+
         if fee == 0:
             return "(бесплатно)"
         else:
@@ -506,22 +561,41 @@ def create_clusters_category_keyboard():
     keyboard = InlineKeyboardMarkup(
         inline_keyboard=[
             [
-                InlineKeyboardButton(text="📝 Добавить категории", callback_data="admin_add_categories"),
-                InlineKeyboardButton(text="🎯 Распределить кластеры", callback_data="admin_assign_clusters"),
+                InlineKeyboardButton(
+                    text="📝 Добавить категории", callback_data="admin_add_categories"
+                ),
+                InlineKeyboardButton(
+                    text="🎯 Распределить кластеры",
+                    callback_data="admin_assign_clusters",
+                ),
             ],
             [
-                InlineKeyboardButton(text="📋 Посмотреть распределение", callback_data="admin_view_distribution"),
+                InlineKeyboardButton(
+                    text="📋 Посмотреть распределение",
+                    callback_data="admin_view_distribution",
+                ),
             ],
             [
-                InlineKeyboardButton(text="📢 Уведомить о распределении", callback_data="admin_notify_distribution"),
+                InlineKeyboardButton(
+                    text="📢 Уведомить о распределении",
+                    callback_data="admin_notify_distribution",
+                ),
             ],
             [
-                InlineKeyboardButton(text="📄 Создать документ", callback_data="admin_create_document"),
-                InlineKeyboardButton(text="💾 Скачать CSV", callback_data="admin_download_csv"),
+                InlineKeyboardButton(
+                    text="📄 Создать документ", callback_data="admin_create_document"
+                ),
+                InlineKeyboardButton(
+                    text="💾 Скачать CSV", callback_data="admin_download_csv"
+                ),
             ],
             [
-                InlineKeyboardButton(text="🔄 Сбросить категории", callback_data="admin_clear_categories"),
-                InlineKeyboardButton(text="🔄 Сбросить кластеры", callback_data="admin_clear_clusters"),
+                InlineKeyboardButton(
+                    text="🔄 Сбросить категории", callback_data="admin_clear_categories"
+                ),
+                InlineKeyboardButton(
+                    text="🔄 Сбросить кластеры", callback_data="admin_clear_clusters"
+                ),
             ],
             [
                 InlineKeyboardButton(text="🏠 Главное меню", callback_data="main_menu"),
@@ -537,14 +611,18 @@ def create_category_selection_keyboard():
         inline_keyboard=[
             [
                 InlineKeyboardButton(text="🥇 Элита", callback_data="category_elite"),
-                InlineKeyboardButton(text="🏃 Классика", callback_data="category_classic"),
+                InlineKeyboardButton(
+                    text="🏃 Классика", callback_data="category_classic"
+                ),
             ],
             [
                 InlineKeyboardButton(text="👩 Женский", callback_data="category_women"),
                 InlineKeyboardButton(text="👥 Команда", callback_data="category_team"),
             ],
             [
-                InlineKeyboardButton(text="⏭️ Пропустить", callback_data="category_skip"),
+                InlineKeyboardButton(
+                    text="⏭️ Пропустить", callback_data="category_skip"
+                ),
             ],
         ]
     )
@@ -589,8 +667,12 @@ def create_bib_notification_confirmation_keyboard():
     keyboard = InlineKeyboardMarkup(
         inline_keyboard=[
             [
-                InlineKeyboardButton(text="✅ Да, отправить", callback_data="confirm_bib_notify"),
-                InlineKeyboardButton(text="❌ Нет, позже", callback_data="cancel_bib_notify"),
+                InlineKeyboardButton(
+                    text="✅ Да, отправить", callback_data="confirm_bib_notify"
+                ),
+                InlineKeyboardButton(
+                    text="❌ Нет, позже", callback_data="cancel_bib_notify"
+                ),
             ],
         ]
     )
