@@ -2,14 +2,8 @@
   "max_runners": 22,
   "max_volunteers": 6,
   "csv_delimiter": ";",
-<<<<<<< HEAD
   "log_level": "ERROR",
-  "sponsor_image_path": "/app/images/sponsor_image.jpeg"
-}
-=======
-  "log_level": "INFO",
   "sponsor_image_path": "/app/images/sponsor_image.jpeg",
   "participation_fee": 750,
   "participation_fee_currency": "р"
 }
->>>>>>> 8e125482e9b9acf3324901617f6b85d16aff0b6c
