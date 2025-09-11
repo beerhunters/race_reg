@@ -472,7 +472,7 @@ def create_media_category_keyboard():
     commands = [
         InlineKeyboardButton(text="ℹ️ Обновить информационное сообщение", callback_data="admin_info"),
         InlineKeyboardButton(text="👋 Обновить приветственное сообщение", callback_data="admin_welcome"),
-        InlineKeyboardButton(text="🖼 Создать афишу", callback_data="admin_create_afisha"),
+        InlineKeyboardButton(text="🖼 Обновить афишу", callback_data="admin_create_afisha"),
         InlineKeyboardButton(text="🤝 Обновить спонсорское изображение", callback_data="admin_update_sponsor"),
         InlineKeyboardButton(text="🏠 Главное меню", callback_data="main_menu"),
     ]

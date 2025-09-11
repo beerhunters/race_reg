@@ -71,7 +71,7 @@ def register_info_media_handlers(dp: Dispatcher, bot: Bot, admin_id: int):
         afisha_path = "/app/images/afisha.jpeg"
         afisha_exists = os.path.exists(afisha_path)
 
-        text = "🖼 <b>Создать афишу</b>\n\n"
+        text = "🖼 <b>Обновить афишу</b>\n\n"
 
         if afisha_exists:
             try:

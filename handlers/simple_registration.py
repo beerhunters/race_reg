@@ -105,7 +105,22 @@ async def handle_start_command(message: Message, state: FSMContext, bot: Bot, ad
             end_date = moscow_tz.localize(end_date)
             current_time = datetime.now(moscow_tz)
             if current_time > end_date:
-                await message.answer(messages["registration_closed"])
+                afisha_path = "/app/images/afisha.jpeg"
+                try:
+                    if os.path.exists(afisha_path):
+                        await bot.send_photo(
+                            chat_id=message.from_user.id,
+                            photo=FSInputFile(afisha_path),
+                            caption=messages["registration_closed"],
+                            parse_mode="HTML"
+                        )
+                        logger.info(f"Сообщение о закрытой регистрации с афишей отправлено user_id={message.from_user.id}")
+                    else:
+                        await message.answer(messages["registration_closed"])
+                        logger.info(f"Сообщение о закрытой регистрации (без афиши) отправлено user_id={message.from_user.id}")
+                except Exception as e:
+                    logger.error(f"Ошибка при отправке сообщения о закрытой регистрации: {e}")
+                    await message.answer(messages["registration_closed"])
                 return
         except ValueError:
             logger.error(f"Некорректный формат reg_end_date: {reg_end_date}")
