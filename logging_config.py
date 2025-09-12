@@ -188,6 +188,10 @@ class TelegramHandler(logging.Handler):
         # Счетчики ошибок для статистики
         self._error_counts = {}
         self._total_errors = 0
+        
+        # Анти-спам для сетевых ошибок
+        self._network_error_timestamps = {}
+        self._network_error_threshold = 60  # Не отправлять одинаковые сетевые ошибки чаще раз в минуту
     
     def set_bot(self, bot_instance):
         """Установка экземпляра бота после инициализации."""
@@ -219,6 +223,10 @@ class TelegramHandler(logging.Handler):
             return
             
         try:
+            # Фильтруем типичные сетевые ошибки Telegram API
+            if self._should_skip_telegram_error(record):
+                return
+            
             # Обновляем статистику ошибок
             self._total_errors += 1
             error_key = f"{record.name}:{record.levelname}"
@@ -237,6 +245,57 @@ class TelegramHandler(logging.Handler):
         except Exception:
             # Не логируем ошибки отправки в Telegram, чтобы избежать рекурсии
             pass
+    
+    def _should_skip_telegram_error(self, record) -> bool:
+        """Определяет, нужно ли пропустить отправку сетевых ошибок Telegram."""
+        import time
+        
+        message_lower = record.getMessage().lower()
+        
+        # Список типичных сетевых ошибок Telegram, которые не нужно отправлять
+        telegram_network_errors = [
+            'failed to fetch updates',
+            'request timeout error',
+            'bad gateway',
+            'internal server error',
+            'service unavailable',
+            'telegram server says - bad gateway',
+            'telegram server says - internal server error', 
+            'telegram server says - service unavailable',
+            'telegram server says - gateway timeout',
+            'telegram server says - request timeout',
+            'telegramnetworkerror',
+            'telegramservererror',
+            'connection timeout',
+            'read timeout',
+            'connect timeout',
+            'network is unreachable',
+            'connection reset by peer',
+            'ssl handshake failed'
+        ]
+        
+        # Проверяем aiogram dispatcher ошибки
+        if 'aiogram.dispatcher' in record.name or 'aiogram.client' in record.name:
+            matched_error = None
+            for error in telegram_network_errors:
+                if error in message_lower:
+                    matched_error = error
+                    break
+            
+            if matched_error:
+                # Проверяем анти-спам для конкретного типа ошибки
+                current_time = time.time()
+                last_time = self._network_error_timestamps.get(matched_error, 0)
+                
+                if current_time - last_time < self._network_error_threshold:
+                    # Ошибка была недавно, пропускаем
+                    return True
+                else:
+                    # Обновляем время последней отправки
+                    self._network_error_timestamps[matched_error] = current_time
+                    return False  # Отправляем первую за интервал
+            
+        return False
     
     def format_telegram_message(self, record) -> str:
         """Форматирование сообщения для Telegram."""
@@ -291,7 +350,16 @@ class TelegramHandler(logging.Handler):
         
         # Добавляем рекомендации по исправлению частых ошибок
         error_message_lower = record.getMessage().lower()
-        if 'zerodivisionerror' in error_message_lower:
+        
+        # Специальная обработка для сетевых ошибок Telegram
+        telegram_network_errors = ['failed to fetch updates', 'request timeout', 'bad gateway', 'internal server error']
+        is_network_error = any(err in error_message_lower for err in telegram_network_errors)
+        
+        if is_network_error and ('aiogram.dispatcher' in record.name or 'aiogram.client' in record.name):
+            message += f"🌐 <b>Сетевая ошибка Telegram API</b>\n"
+            message += f"⏰ <b>Анти-спам:</b> Аналогичные ошибки игнорируются {self._network_error_threshold} сек\n"
+            message += f"💡 <b>Совет:</b> Обычно исчезает сама - проблемы с серверами Telegram\n"
+        elif 'zerodivisionerror' in error_message_lower:
             message += f"💡 <b>Совет:</b> Проверьте деление на ноль\n"
         elif 'keyerror' in error_message_lower:
             message += f"💡 <b>Совет:</b> Проверьте наличие ключа в словаре\n"

@@ -52,10 +52,23 @@ async def main():
     )
     
     try:
-        await dp.start_polling(bot)
+        # Запускаем polling с улучшенными настройками для устойчивости
+        await dp.start_polling(
+            bot,
+            timeout=30,              # Таймаут long polling (30 сек)
+            drop_pending_updates=False,  # Не пропускаем накопившиеся обновления
+            allowed_updates=None,    # Получаем все типы обновлений
+            relax=0.1,              # Пауза между запросами при ошибках (0.1 сек)
+            fast=True,              # Быстрый режим (меньше задержек)
+        )
+    except KeyboardInterrupt:
+        log.system_event("Bot shutdown", "Received keyboard interrupt")
+    except Exception as e:
+        log.critical_system_error("Bot polling failed", f"Error: {e}")
     finally:
         # Stop automatic backups on shutdown
         await stop_automatic_backups()
+        log.system_event("Bot shutdown", "Cleanup completed")
 
 
 if __name__ == "__main__":
