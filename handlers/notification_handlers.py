@@ -7,6 +7,8 @@ from aiogram.fsm.context import FSMContext
 from aiogram.types import Message, FSInputFile, CallbackQuery, InputMediaPhoto, InlineKeyboardMarkup, InlineKeyboardButton
 from aiogram.exceptions import TelegramBadRequest, TelegramForbiddenError
 from .utils import (
+    messages,
+    RegistrationForm,
     logger,
     messages,
     config,

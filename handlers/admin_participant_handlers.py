@@ -16,6 +16,8 @@ from aiogram.types import (
 )
 from aiogram.fsm.context import FSMContext
 from .utils import (
+    messages,
+    RegistrationForm,
     logger,
     messages,
     config,

@@ -4,6 +4,7 @@ services:
     environment:
       - BOT_TOKEN=${BOT_TOKEN}
       - ADMIN_ID=${ADMIN_ID}
+      - FOR_LOGS=${FOR_LOGS}
     volumes:
       - ./data:/app/data
       - ./logs:/app/logs

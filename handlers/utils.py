@@ -1,140 +1,11 @@
 import json
-import logging.handlers
-import os
 from aiogram.fsm.state import State, StatesGroup
 from aiogram.types import InlineKeyboardMarkup, InlineKeyboardButton
 
+# Импортируем централизованную систему логирования
+from logging_config import get_logger, log_level, log, LogHelper
 
-class CustomRotatingFileHandler(logging.handlers.BaseRotatingHandler):
-    def __init__(self, filename, maxBytes, encoding=None):
-        super().__init__(filename, mode="a", encoding=encoding)
-        self.maxBytes = maxBytes
-        self.backup_file = f"{filename}.1"
-
-    def shouldRollover(self, record):
-        if (
-            os.path.exists(self.baseFilename)
-            and os.path.getsize(self.baseFilename) > self.maxBytes
-        ):
-            return True
-        return False
-
-    def doRollover(self):
-        if self.stream:
-            self.stream.close()
-            self.stream = None
-        if os.path.exists(self.baseFilename):
-            if os.path.exists(self.backup_file):
-                os.remove(self.backup_file)
-            os.rename(self.baseFilename, self.backup_file)
-        self.stream = self._open()
-
-
-os.makedirs("/app/logs", exist_ok=True)
-log_level = {
-    "DEBUG": logging.DEBUG,
-    "INFO": logging.INFO,
-    "WARNING": logging.WARNING,
-    "ERROR": logging.ERROR,
-    "CRITICAL": logging.CRITICAL,
-}
-logging.basicConfig(
-    level=logging.INFO,
-    format="%(asctime)s - %(levelname)s - %(message)s",
-    handlers=[
-        logging.StreamHandler(),
-        CustomRotatingFileHandler("/app/logs/bot.log", maxBytes=10 * 1024 * 1024),
-    ],
-)
-logger = logging.getLogger(__name__)
-
-
-# Стандартизированные функции логирования
-class LogHelper:
-    """Helper class for standardized logging patterns"""
-
-    @staticmethod
-    def command_received(command: str, user_id: int, username: str = None):
-        """Log when a command is received"""
-        user_info = f"@{username}" if username else f"ID:{user_id}"
-        logger.info(f"Command '{command}' received from user {user_info}")
-
-    @staticmethod
-    def admin_action(action: str, admin_id: int, details: str = None):
-        """Log admin actions"""
-        msg = f"Admin action: {action} (admin_id={admin_id})"
-        if details:
-            msg += f" - {details}"
-        logger.info(msg)
-
-    @staticmethod
-    def database_operation(
-        operation: str,
-        table: str,
-        user_id: int = None,
-        success: bool = True,
-        details: str = None,
-    ):
-        """Log database operations"""
-        status = "SUCCESS" if success else "FAILED"
-        msg = f"DB {operation} on {table}: {status}"
-        if user_id:
-            msg += f" (user_id={user_id})"
-        if details:
-            msg += f" - {details}"
-
-        if success:
-            logger.info(msg)
-        else:
-            logger.error(msg)
-
-    @staticmethod
-    def user_registration(
-        user_id: int, username: str, name: str, role: str, success: bool = True
-    ):
-        """Log user registration attempts"""
-        user_info = f"{name} (@{username}, ID:{user_id})"
-        if success:
-            logger.info(f"User registration SUCCESS: {user_info} as {role}")
-        else:
-            logger.error(f"User registration FAILED: {user_info} as {role}")
-
-    @staticmethod
-    def notification_sent(
-        notification_type: str, user_id: int, success: bool = True, error: str = None
-    ):
-        """Log notification sending"""
-        if success:
-            logger.info(f"Notification sent: {notification_type} to user_id={user_id}")
-        else:
-            logger.error(
-                f"Notification failed: {notification_type} to user_id={user_id} - {error}"
-            )
-
-    @staticmethod
-    def system_event(event: str, details: str = None):
-        """Log system-level events"""
-        msg = f"System event: {event}"
-        if details:
-            msg += f" - {details}"
-        logger.info(msg)
-
-    @staticmethod
-    def validation_error(field: str, value: str, error: str, user_id: int = None):
-        """Log validation errors"""
-        msg = f"Validation error for {field}='{value}': {error}"
-        if user_id:
-            msg += f" (user_id={user_id})"
-        logger.warning(msg)
-
-    @staticmethod
-    def handler_registration(handler_name: str):
-        """Log handler registration"""
-        logger.info(f"Handler registered: {handler_name}")
-
-
-# Создаем глобальный экземпляр для удобства использования
-log = LogHelper()
+logger = get_logger(__name__)
 
 try:
     with open("messages.json", "r", encoding="utf-8") as f:
@@ -157,16 +28,6 @@ except FileNotFoundError:
 except json.JSONDecodeError as e:
     logger.error(f"Ошибка при разборе config.json: {e}")
     raise
-
-if config.get("log_level") not in log_level:
-    logger.error(
-        f"Недопустимое значение log_level: {config.get('log_level')}. Используется ERROR."
-    )
-    logging.getLogger().setLevel(logging.ERROR)
-else:
-    logging.getLogger().setLevel(log_level[config["log_level"]])
-    logger.info(f"Установлен уровень логирования: {config['log_level']}")
-
 
 class RegistrationForm(StatesGroup):
     waiting_for_name = State()

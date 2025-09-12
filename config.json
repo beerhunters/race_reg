@@ -5,5 +5,10 @@
   "log_level": "ERROR",
   "sponsor_image_path": "/app/images/sponsor_image.jpeg",
   "participation_fee": 750,
-  "participation_fee_currency": "р"
+  "participation_fee_currency": "р",
+  "auto_backup": {
+    "enabled": true,
+    "interval_hours": 24,
+    "max_backups_keep": 7
+  }
 }

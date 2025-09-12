@@ -4,16 +4,18 @@ from aiogram.types import Message, CallbackQuery
 from aiogram.fsm.context import FSMContext
 
 from .utils import (
-    logger,
+    create_main_menu_keyboard,
     messages,
     RegistrationForm,
     create_edit_profile_keyboard,
     create_gender_keyboard,
     create_edit_confirmation_keyboard,
     create_admin_edit_approval_keyboard,
-    create_main_menu_keyboard,
 )
+from logging_config import get_logger
 from .validation import validate_name, validate_time_format, sanitize_input
+
+logger = get_logger(__name__)
 from database import (
     get_participant_by_user_id,
     create_edit_request,

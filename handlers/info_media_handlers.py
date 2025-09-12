@@ -6,6 +6,8 @@ from aiogram.fsm.context import FSMContext
 from aiogram.types import Message, FSInputFile, CallbackQuery
 from aiogram.exceptions import TelegramBadRequest
 from .utils import (
+    messages,
+    RegistrationForm,
     logger,
     messages,
     config,

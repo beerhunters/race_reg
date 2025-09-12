@@ -11,8 +11,9 @@ from aiogram.filters import Command, StateFilter
 from aiogram.types import Message, CallbackQuery, InlineKeyboardMarkup, InlineKeyboardButton
 from aiogram.fsm.context import FSMContext
 
-from .utils import logger, messages, RegistrationForm
+from logging_config import get_logger
 from .validation import sanitize_input
+from .utils import messages, RegistrationForm
 from database import (
     archive_race_data,
     get_user_race_history,
@@ -21,6 +22,8 @@ from database import (
     is_current_event_active,
     get_participant_count_by_role,
 )
+
+logger = get_logger(__name__)
 
 
 async def handle_archive_race_command(message: Message, state: FSMContext):

@@ -3,6 +3,7 @@ from aiogram.fsm.context import FSMContext
 from aiogram.types import Message, CallbackQuery
 
 from .utils import (
+    RegistrationForm,
     logger,
     RegistrationForm,
     create_clusters_category_keyboard,
@@ -667,7 +668,7 @@ def register_cluster_handlers(dp: Dispatcher, bot: Bot, admin_id: int):
                             name = p[2]
                             target_time = p[3] or "—"
                             bib_number = (
-                                p[7] if len(p) > 7 else None
+                                p[9] if len(p) > 9 else None
                             )  # Check if bib_number exists
                             bib_info = f" (№{bib_number})" if bib_number else ""
                             document_text += (
@@ -680,7 +681,7 @@ def register_cluster_handlers(dp: Dispatcher, bot: Bot, admin_id: int):
                     ):
                         name = p[2]
                         target_time = p[3] or "—"
-                        bib_number = p[7] if len(p) > 7 else None
+                        bib_number = p[9] if len(p) > 9 else None
                         bib_info = f" (№{bib_number})" if bib_number else ""
                         document_text += f"  {i}. {name}{bib_info} - {target_time}\n"
 
@@ -724,7 +725,7 @@ def register_cluster_handlers(dp: Dispatcher, bot: Bot, admin_id: int):
                 ):
                     name = p[2]
                     target_time = p[3] or "—"
-                    bib_number = p[7] if len(p) > 7 else None
+                    bib_number = p[9] if len(p) > 9 else None
                     bib_info = f" (№{bib_number})" if bib_number else ""
                     document_text += f"  {i}. {name}{bib_info} - {target_time}\n"
 

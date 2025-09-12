@@ -1,39 +1,23 @@
 import asyncio
-import logging.handlers
 import os
-import json
 from aiogram import Bot, Dispatcher
 from aiogram.client.default import DefaultBotProperties
 from aiogram.fsm.storage.memory import MemoryStorage
 from aiogram.types import BotCommand
 from aiogram.enums import ParseMode
 
+# Импортируем централизованную систему логирования
+from logging_config import get_logger, log, setup_telegram_logging
+
 from database import init_db
 from handlers.backup_handlers import start_automatic_backups, stop_automatic_backups
-
 from handler_register import register_all_handlers
 
+# Получаем логгер для main модуля
+logger = get_logger(__name__)
 
-# Import logging setup from handlers.utils
-from handlers.utils import logger, log_level, log
-
-try:
-    with open("config.json", "r", encoding="utf-8") as f:
-        config = json.load(f)
-    log.system_event("Config loaded", "config.json loaded successfully")
-except FileNotFoundError:
-    log.system_event("Config loading failed", "config.json not found")
-    raise
-except json.JSONDecodeError as e:
-    log.system_event("Config loading failed", f"JSON decode error: {e}")
-    raise
-
-if config.get("log_level") not in log_level:
-    log.validation_error("log_level", config.get("log_level"), "Invalid log level, using ERROR")
-    logging.getLogger().setLevel(logging.ERROR)
-else:
-    logging.getLogger().setLevel(log_level[config["log_level"]])
-    log.system_event("Log level set", f"Level: {config['log_level']}")
+# Логирование запуска приложения
+log.system_event("Application startup", "Starting beermile registration bot")
 
 try:
     BOT_TOKEN = os.environ["BOT_TOKEN"]
@@ -47,7 +31,11 @@ dp = Dispatcher(storage=MemoryStorage())
 
 
 async def main():
-    log.system_event("Bot startup")
+    log.bot_startup("Initializing beermile registration bot")
+    
+    # Setup Telegram logging - подключаем бота к системе логирования для отправки ошибок в группу
+    setup_telegram_logging(bot)
+    
     init_db()
     register_all_handlers(dp, bot, ADMIN_ID)
     

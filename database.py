@@ -1,16 +1,16 @@
 import json
 import sqlite3
-import logging
 import os
 from datetime import datetime
+from logging_config import get_logger
 
-logger = logging.getLogger(__name__)
+logger = get_logger(__name__)
 DB_PATH = "/app/data/race_participants.db"
 
 try:
     with open("config.json", "r", encoding="utf-8") as f:
         config = json.load(f)
-    # logger.info("Файл config.json успешно загружен")
+    logger.info("Файл config.json успешно загружен")
 except FileNotFoundError:
     logger.error("Файл config.json не найден")
     raise

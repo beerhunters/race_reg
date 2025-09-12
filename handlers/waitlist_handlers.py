@@ -9,7 +9,9 @@ from aiogram.types import Message, CallbackQuery
 from aiogram.fsm.context import FSMContext
 from aiogram.exceptions import TelegramBadRequest, TelegramForbiddenError
 
-from .utils import logger, messages, create_register_keyboard, get_participation_fee_text
+from logging_config import get_logger
+
+logger = get_logger(__name__)
 from database import (
     get_waitlist_by_role,
     get_waitlist_position,

@@ -24,16 +24,17 @@ from aiogram.types import (
 from aiogram.fsm.context import FSMContext
 from aiogram.exceptions import TelegramBadRequest, TelegramForbiddenError
 
+from logging_config import get_logger, log
 from .utils import (
-    logger,
-    messages,
-    config,
-    RegistrationForm,
-    create_gender_keyboard,
     create_main_menu_keyboard,
+    messages,
+    RegistrationForm,
+    config,
+    create_gender_keyboard,
     get_participation_fee_text,
-    log,
 )
+
+logger = get_logger(__name__)
 from .validation import validate_name, validate_time_format, sanitize_input
 from database import (
     get_participant_by_user_id,
@@ -281,7 +282,17 @@ async def handle_start_command(message: Message, state: FSMContext, bot: Bot, ad
 
 async def handle_start_registration(callback: CallbackQuery, state: FSMContext):
     """Обработчик начала процесса регистрации"""
-    await callback.message.edit_text("📝 Введите ваше полное имя:")
+    try:
+        # Try to edit as text message first
+        await callback.message.edit_text("📝 Введите ваше полное имя:")
+    except Exception:
+        # If it fails, it might be a photo message, try editing caption
+        try:
+            await callback.message.edit_caption(caption="📝 Введите ваше полное имя:")
+        except Exception:
+            # If both fail, send a new message
+            await callback.message.answer("📝 Введите ваше полное имя:")
+    
     await state.set_state(RegistrationForm.waiting_for_name)
     await callback.answer()
 

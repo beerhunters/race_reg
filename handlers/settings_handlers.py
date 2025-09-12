@@ -7,7 +7,10 @@ from aiogram.types import Message, CallbackQuery
 from aiogram.exceptions import TelegramBadRequest, TelegramForbiddenError
 from pytz import timezone
 
-from .utils import logger, messages, RegistrationForm, create_back_keyboard, log
+from logging_config import get_logger, log
+from .utils import RegistrationForm
+
+logger = get_logger(__name__)
 from .validation import validate_participant_limit, sanitize_input
 from database import (
     get_setting,

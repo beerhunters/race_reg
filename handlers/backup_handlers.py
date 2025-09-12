@@ -9,10 +9,12 @@ from aiogram.types import Message, CallbackQuery, BufferedInputFile
 import pytz
 import zipfile
 import asyncio
-import logging
 
-from .utils import logger, RegistrationForm
+from .utils import RegistrationForm, config
 from database import DB_PATH
+from logging_config import get_logger
+
+logger = get_logger(__name__)
 
 # Global variable to store backup task
 backup_task = None
@@ -101,12 +103,21 @@ def register_backup_handlers(dp: Dispatcher, bot: Bot, admin_id: int):
         text = "💾 <b>Система резервного копирования</b>\n\n"
 
         # Automatic backup status
+        backup_config = config.get("auto_backup", {})
+        backup_enabled = backup_config.get("enabled", False)
+        backup_interval = backup_config.get("interval_hours", 24)
+        max_backups = backup_config.get("max_backups_keep", 7)
+        
         global backup_task
-        if backup_task and not backup_task.done():
-            text += "🔄 <b>Автоматические бекапы:</b> Активны\n"
-            text += "⏰ Интервал: каждые 6 часов\n"
+        if backup_enabled and backup_task and not backup_task.done():
+            text += "✅ <b>Автоматические бекапы:</b> Включены\n"
+            text += f"⏰ Интервал: каждые {backup_interval} час(ов)\n"
+            text += f"📦 Хранить последних: {max_backups} бекапов\n"
+        elif backup_enabled:
+            text += "⚠️ <b>Автоматические бекапы:</b> Включены в конфигурации, но не запущены\n"
+            text += f"⏰ Интервал: каждые {backup_interval} час(ов)\n"
         else:
-            text += "❌ <b>Автоматические бекапы:</b> Отключены\n"
+            text += "❌ <b>Автоматические бекапы:</b> Отключены в конфигурации\n"
 
         text += f"📁 Локальных бекапов: {len(backup_files)}\n\n"
 
@@ -177,6 +188,18 @@ def register_backup_handlers(dp: Dispatcher, bot: Bot, admin_id: int):
 
         await callback_query.answer()
 
+        backup_config = config.get("auto_backup", {})
+        backup_enabled = backup_config.get("enabled", False)
+        backup_interval = backup_config.get("interval_hours", 24)
+
+        if not backup_enabled:
+            await callback_query.message.edit_text(
+                "❌ <b>Автоматические бекапы отключены в конфигурации</b>\n\n"
+                "💡 Для включения автобекапов установите `auto_backup.enabled: true` в config.json\n"
+                "📝 Также можно настроить интервал через `auto_backup.interval_hours`"
+            )
+            return
+
         global backup_task
 
         if backup_task and not backup_task.done():
@@ -184,7 +207,8 @@ def register_backup_handlers(dp: Dispatcher, bot: Bot, admin_id: int):
             backup_task.cancel()
             await callback_query.message.edit_text(
                 "❌ <b>Автоматические резервные копии остановлены</b>\n\n"
-                "💡 Вы можете запустить их снова через настройки бекапов."
+                "💡 Вы можете запустить их снова через настройки бекапов.\n"
+                "⚙️ Автобекапы всё ещё включены в конфигурации."
             )
             logger.info("Автоматические бекапы остановлены администратором")
         else:
@@ -192,10 +216,10 @@ def register_backup_handlers(dp: Dispatcher, bot: Bot, admin_id: int):
             backup_task = asyncio.create_task(automatic_backup_scheduler(bot, admin_id))
             await callback_query.message.edit_text(
                 "✅ <b>Автоматические резервные копии запущены</b>\n\n"
-                "⏰ Интервал: каждые 6 часов\n"
+                f"⏰ Интервал: каждые {backup_interval} час(ов)\n"
                 "📤 Бекапы будут отправляться вам в личные сообщения"
             )
-            logger.info("Автоматические бекапы запущены администратором")
+            logger.info(f"Автоматические бекапы запущены администратором с интервалом {backup_interval}ч")
 
     @dp.callback_query(F.data == "admin_cleanup_backups")
     async def cleanup_old_backups(callback_query: CallbackQuery):
@@ -208,6 +232,9 @@ def register_backup_handlers(dp: Dispatcher, bot: Bot, admin_id: int):
         await callback_query.answer()
 
         try:
+            backup_config = config.get("auto_backup", {})
+            max_backups = backup_config.get("max_backups_keep", 7)
+            
             backup_dir = "/app/backups"
             if not os.path.exists(backup_dir):
                 await callback_query.message.answer("📂 Директория бекапов не найдена")
@@ -217,15 +244,15 @@ def register_backup_handlers(dp: Dispatcher, bot: Bot, admin_id: int):
             backup_files = [f for f in os.listdir(backup_dir) if f.endswith(".zip")]
             backup_files.sort()
 
-            if len(backup_files) <= 10:  # Keep at least 10 backups
+            if len(backup_files) <= max_backups:
                 await callback_query.message.answer(
                     f"💾 <b>Очистка не требуется</b>\n\n"
-                    f"Найдено {len(backup_files)} бекапов (≤ 10)"
+                    f"Найдено {len(backup_files)} бекапов (≤ {max_backups})"
                 )
                 return
 
-            # Remove old backups, keep last 10
-            files_to_remove = backup_files[:-10]
+            # Remove old backups, keep last max_backups
+            files_to_remove = backup_files[:-max_backups]
             removed_count = 0
 
             for file_name in files_to_remove:
@@ -239,7 +266,7 @@ def register_backup_handlers(dp: Dispatcher, bot: Bot, admin_id: int):
                 f"🧹 <b>Очистка завершена</b>\n\n"
                 f"• Удалено старых бекапов: {removed_count}\n"
                 f"• Оставлено последних: {len(backup_files) - removed_count}\n\n"
-                f"💡 Система автоматически сохраняет последние 10 бекапов"
+                f"💡 Настройка хранения: {max_backups} последних бекапов"
             )
 
             logger.info(f"Удалено {removed_count} старых бекапов")
@@ -410,13 +437,17 @@ async def create_backup():
 
 
 async def automatic_backup_scheduler(bot: Bot, admin_id: int):
-    """Automatic backup scheduler - runs every 6 hours"""
-    logger.info("Запущен планировщик автоматических бекапов (каждые 6 часов)")
+    """Automatic backup scheduler - runs based on config interval"""
+    backup_config = config.get("auto_backup", {})
+    interval_hours = backup_config.get("interval_hours", 24)
+    max_backups = backup_config.get("max_backups_keep", 7)
+    
+    logger.info(f"Запущен планировщик автоматических бекапов (каждые {interval_hours} час(ов))")
 
     while True:
         try:
-            # Wait 6 hours
-            await asyncio.sleep(6 * 60 * 60)  # 6 hours in seconds
+            # Wait configured interval
+            await asyncio.sleep(interval_hours * 60 * 60)  # interval in seconds
 
             logger.info("Создание автоматической резервной копии...")
 
@@ -478,7 +509,7 @@ async def automatic_backup_scheduler(bot: Bot, admin_id: int):
                 except:
                     pass
 
-            # Clean up old local backups (keep only last 5 local backups)
+            # Clean up old local backups (keep only configured amount)
             try:
                 backup_dir = "/app/backups"
                 if os.path.exists(backup_dir):
@@ -487,8 +518,8 @@ async def automatic_backup_scheduler(bot: Bot, admin_id: int):
                     ]
                     backup_files.sort()
 
-                    # Remove old backups, keep last 5
-                    while len(backup_files) > 5:
+                    # Remove old backups, keep last max_backups
+                    while len(backup_files) > max_backups:
                         oldest_backup = backup_files.pop(0)
                         os.remove(os.path.join(backup_dir, oldest_backup))
                         logger.info(f"Удален старый автобекап: {oldest_backup}")
@@ -504,11 +535,19 @@ async def automatic_backup_scheduler(bot: Bot, admin_id: int):
 
 
 async def start_automatic_backups(bot: Bot, admin_id: int):
-    """Start automatic backups on bot startup"""
+    """Start automatic backups on bot startup if enabled in config"""
+    backup_config = config.get("auto_backup", {})
+    backup_enabled = backup_config.get("enabled", False)
+    interval_hours = backup_config.get("interval_hours", 24)
+    
+    if not backup_enabled:
+        logger.info("Автоматические бекапы отключены в конфигурации")
+        return
+    
     global backup_task
     if backup_task is None or backup_task.done():
         backup_task = asyncio.create_task(automatic_backup_scheduler(bot, admin_id))
-        logger.info("Автоматические бекапы запущены при старте бота")
+        logger.info(f"Автоматические бекапы запущены при старте бота с интервалом {interval_hours}ч")
 
 
 async def stop_automatic_backups():

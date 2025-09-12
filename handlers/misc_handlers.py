@@ -1,6 +1,9 @@
 from aiogram import Dispatcher, Bot
 from aiogram.types import Message
-from .utils import logger, messages, create_main_menu_keyboard
+from logging_config import get_logger
+from .utils import messages, create_main_menu_keyboard
+
+logger = get_logger(__name__)
 
 
 def register_misc_handlers(dp: Dispatcher, bot: Bot, admin_id: int):
