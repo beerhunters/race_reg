@@ -79,6 +79,11 @@ def create_start_registration_keyboard():
 
 async def handle_start_command(message: Message, state: FSMContext, bot: Bot, admin_id: int):
     """Обработчик команды /start"""
+    # Проверяем, что отправитель не является ботом
+    if message.from_user.is_bot:
+        logger.warning(f"Попытка взаимодействия с ботом: {message.from_user.id} (@{message.from_user.username})")
+        return
+    
     user_id = message.from_user.id
     log.command_received("/start", user_id, message.from_user.username)
     
