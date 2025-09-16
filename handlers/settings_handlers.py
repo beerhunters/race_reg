@@ -353,4 +353,144 @@ def register_settings_handlers(dp: Dispatcher, bot: Bot, admin_id: int):
         
         await state.clear()
 
+    async def set_event_date(event: [Message, CallbackQuery], state: FSMContext):
+        """Set event date"""
+        user_id = event.from_user.id
+        if user_id != admin_id:
+            await event.answer("❌ Доступ запрещен")
+            return
+        logger.info(f"Команда изменения даты мероприятия от user_id={user_id}")
+        
+        if isinstance(event, CallbackQuery):
+            await event.message.delete()
+            message = event.message
+            await event.answer()
+        else:
+            await event.delete()
+            message = event
+        
+        # Get current date
+        current_date = get_setting("event_date")
+        if current_date is None:
+            current_date = "не установлена"
+        
+        text = "📅 <b>Изменить дату мероприятия</b>\n\n"
+        text += f"📊 Текущая дата: {current_date}\n\n"
+        text += "✏️ Введите новую дату мероприятия:\n"
+        text += "• Формат: ДД месяц ГГГГ (например: 12 июля 2025)\n"
+        text += "• Или: ДД.ММ.ГГГГ (например: 12.07.2025)\n"
+        text += "• Дата будет сохранена в базе данных"
+        
+        await message.answer(text)
+        await state.set_state(RegistrationForm.waiting_for_event_date)
+
+    @dp.message(RegistrationForm.waiting_for_event_date)
+    async def process_event_date(message: Message, state: FSMContext):
+        """Process new event date"""
+        if message.from_user.id != admin_id:
+            await message.answer("❌ Доступ запрещен")
+            await state.clear()
+            return
+        
+        date_text = sanitize_input(message.text, 50).strip()
+        
+        if len(date_text) < 3:
+            await message.answer("❌ Дата слишком короткая. Попробуйте снова:")
+            return
+        
+        # Get old date for logging
+        old_date = get_setting("event_date")
+        old_date_str = str(old_date) if old_date is not None else "не установлена"
+        
+        # Save new date
+        success = set_setting("event_date", date_text)
+        
+        if success:
+            text = "✅ <b>Дата мероприятия изменена</b>\n\n"
+            text += f"📊 Старая дата: {old_date_str}\n"
+            text += f"📅 Новая дата: {date_text}\n\n"
+            text += "🔄 Изменения вступают в силу немедленно и будут отображаться в сообщениях."
+            
+            await message.answer(text)
+            logger.info(f"Дата мероприятия изменена с '{old_date_str}' на '{date_text}'")
+        else:
+            await message.answer("❌ Ошибка при сохранении даты. Попробуйте снова.")
+            logger.error("Ошибка при обновлении настройки event_date")
+        
+        await state.clear()
+
+    @dp.callback_query(F.data == "admin_set_event_date")
+    async def callback_set_event_date(callback: CallbackQuery, state: FSMContext):
+        await set_event_date(callback, state)
+
+    async def set_event_location(event: [Message, CallbackQuery], state: FSMContext):
+        """Set event location"""
+        user_id = event.from_user.id
+        if user_id != admin_id:
+            await event.answer("❌ Доступ запрещен")
+            return
+        logger.info(f"Команда изменения места мероприятия от user_id={user_id}")
+        
+        if isinstance(event, CallbackQuery):
+            await event.message.delete()
+            message = event.message
+            await event.answer()
+        else:
+            await event.delete()
+            message = event
+        
+        # Get current location
+        current_location = get_setting("event_location")
+        if current_location is None:
+            current_location = "не установлено"
+        
+        text = "📍 <b>Изменить место мероприятия</b>\n\n"
+        text += f"📊 Текущее место: {current_location}\n\n"
+        text += "✏️ Введите новое место проведения мероприятия:\n"
+        text += "• Например: Бар Все Твои Друзья\n"
+        text += "• Или: ул. Ленина, 123, Москва\n"
+        text += "• Место будет сохранено в базе данных"
+        
+        await message.answer(text)
+        await state.set_state(RegistrationForm.waiting_for_event_location)
+
+    @dp.message(RegistrationForm.waiting_for_event_location)
+    async def process_event_location(message: Message, state: FSMContext):
+        """Process new event location"""
+        if message.from_user.id != admin_id:
+            await message.answer("❌ Доступ запрещен")
+            await state.clear()
+            return
+        
+        location_text = sanitize_input(message.text, 200).strip()
+        
+        if len(location_text) < 3:
+            await message.answer("❌ Место слишком короткое. Попробуйте снова:")
+            return
+        
+        # Get old location for logging
+        old_location = get_setting("event_location")
+        old_location_str = str(old_location) if old_location is not None else "не установлено"
+        
+        # Save new location
+        success = set_setting("event_location", location_text)
+        
+        if success:
+            text = "✅ <b>Место мероприятия изменено</b>\n\n"
+            text += f"📊 Старое место: {old_location_str}\n"
+            text += f"📍 Новое место: {location_text}\n\n"
+            text += "🔄 Изменения вступают в силу немедленно и будут отображаться в сообщениях."
+            
+            await message.answer(text)
+            logger.info(f"Место мероприятия изменено с '{old_location_str}' на '{location_text}'")
+        else:
+            await message.answer("❌ Ошибка при сохранении места. Попробуйте снова.")
+            logger.error("Ошибка при обновлении настройки event_location")
+        
+        await state.clear()
+
+    @dp.callback_query(F.data == "admin_set_event_location")
+    async def callback_set_event_location(callback: CallbackQuery, state: FSMContext):
+        await set_event_location(callback, state)
+
     log.handler_registration("settings_handlers completed")

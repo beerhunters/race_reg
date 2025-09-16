@@ -13,6 +13,8 @@ from .utils import (
     config,
     RegistrationForm,
     get_participation_fee_text,
+    get_event_date_text,
+    get_event_location_text,
 )
 
 
@@ -31,7 +33,9 @@ def register_info_media_handlers(dp: Dispatcher, bot: Bot, admin_id: int):
                     chat_id=message.from_user.id,
                     photo=FSInputFile(afisha_path),
                     caption=messages["info_message"].format(
-                        fee=get_participation_fee_text()
+                        fee=get_participation_fee_text(),
+                        event_date=get_event_date_text(),
+                        event_location=get_event_location_text()
                     ),
                 )
                 logger.info(
@@ -39,7 +43,11 @@ def register_info_media_handlers(dp: Dispatcher, bot: Bot, admin_id: int):
                 )
             else:
                 await message.answer(
-                    messages["info_message"].format(fee=get_participation_fee_text())
+                    messages["info_message"].format(
+                        fee=get_participation_fee_text(),
+                        event_date=get_event_date_text(),
+                        event_location=get_event_location_text()
+                    )
                 )
                 logger.info(
                     f"Афиша не найдена, отправлен только текст info_message пользователю user_id={message.from_user.id}"
@@ -49,7 +57,11 @@ def register_info_media_handlers(dp: Dispatcher, bot: Bot, admin_id: int):
                 f"Ошибка при отправке сообщения /info пользователю user_id={message.from_user.id}: {e}"
             )
             await message.answer(
-                messages["info_message"].format(fee=get_participation_fee_text())
+                messages["info_message"].format(
+                    fee=get_participation_fee_text(),
+                    event_date=get_event_date_text(),
+                    event_location=get_event_location_text()
+                )
             )
 
     @dp.message(Command("create_afisha"))

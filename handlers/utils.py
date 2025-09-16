@@ -41,9 +41,13 @@ class RegistrationForm(StatesGroup):
     waiting_for_notify_unpaid_message = State()
     waiting_for_reg_end_date = State()
     waiting_for_price = State()
+    waiting_for_event_date = State()
+    waiting_for_event_location = State()
     waiting_for_paid_id = State()
     waiting_for_bib = State()
     waiting_for_remove_id = State()
+    waiting_for_promote_id = State()
+    waiting_for_demote_id = State()
     waiting_for_runners = State()
     waiting_for_result = State()
     waiting_for_race_date = State()
@@ -282,6 +286,8 @@ def create_participants_category_keyboard():
             text="🏃 Записать результаты", callback_data="admin_results"
         ),
         InlineKeyboardButton(text="🗑 Удалить участника", callback_data="admin_remove"),
+        InlineKeyboardButton(text="⬆️ Перевести из очереди", callback_data="admin_promote_from_waitlist"),
+        InlineKeyboardButton(text="⬇️ Перевести в очередь", callback_data="admin_demote_to_waitlist"),
         InlineKeyboardButton(text="📄 Экспорт в CSV", callback_data="admin_export"),
         InlineKeyboardButton(text="🏠 Главное меню", callback_data="main_menu"),
     ]
@@ -368,6 +374,12 @@ def create_settings_category_keyboard():
         InlineKeyboardButton(
             text="💰 Изменить цену участия", callback_data="admin_set_price"
         ),
+        InlineKeyboardButton(
+            text="📅 Изменить дату мероприятия", callback_data="admin_set_event_date"
+        ),
+        InlineKeyboardButton(
+            text="📍 Изменить место мероприятия", callback_data="admin_set_event_location"
+        ),
         InlineKeyboardButton(text="🏠 Главное меню", callback_data="main_menu"),
     ]
     return InlineKeyboardMarkup(inline_keyboard=[[cmd] for cmd in commands])
@@ -415,6 +427,40 @@ def get_participation_fee_text():
         fee = config.get("participation_fee", 500)
         currency = config.get("participation_fee_currency", "р")
         return f"({fee}{currency})"
+
+
+def get_event_date_text():
+    """Get formatted event date text from database"""
+    try:
+        from database import get_setting
+        
+        event_date = get_setting("event_date")
+        
+        if event_date is None:
+            return "__ ______ 2025"  # Default placeholder
+        
+        return str(event_date)
+        
+    except Exception as e:
+        logger.warning(f"Ошибка получения даты мероприятия из БД: {e}")
+        return "__ ______ 2025"  # Default placeholder
+
+
+def get_event_location_text():
+    """Get formatted event location text from database"""
+    try:
+        from database import get_setting
+        
+        event_location = get_setting("event_location")
+        
+        if event_location is None:
+            return "Бар ____________"  # Default placeholder
+        
+        return str(event_location)
+        
+    except Exception as e:
+        logger.warning(f"Ошибка получения места мероприятия из БД: {e}")
+        return "Бар ____________"  # Default placeholder
 
 
 def create_clusters_category_keyboard():

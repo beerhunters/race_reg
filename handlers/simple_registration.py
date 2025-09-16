@@ -32,6 +32,8 @@ from .utils import (
     config,
     create_gender_keyboard,
     get_participation_fee_text,
+    get_event_date_text,
+    get_event_location_text,
 )
 
 logger = get_logger(__name__)
@@ -46,6 +48,8 @@ from database import (
     add_to_waitlist,
     is_user_in_waitlist,
     is_current_event_active,
+    get_waitlist_position,
+    get_waitlist_by_user_id,
 )
 
 
@@ -206,50 +210,45 @@ async def handle_start_command(message: Message, state: FSMContext, bot: Bot, ad
     
     # Проверка нахождения в очереди ожидания
     if is_user_in_waitlist(user_id):
-        # Проверяем статус в очереди - если пользователь уже подтвердил участие,
-        # то не даем повторно регистрироваться
-        from database import get_waitlist_by_user_id
         waitlist_entry = get_waitlist_by_user_id(user_id)
         
-        if waitlist_entry and waitlist_entry[9] == 'confirmed':  # status at index 9
-            await message.answer(
-                "✅ Вы уже подтвердили участие из очереди ожидания!\n\n"
-                "⏳ Ожидайте обработки администратором."
+        if waitlist_entry:
+            position, total_waiting = get_waitlist_position(user_id)
+            name = waitlist_entry[3]  # name at index 3
+            role = waitlist_entry[5]  # role at index 5
+            role_display = "бегуна" if role == "runner" else "волонтёра"
+            status = waitlist_entry[8]  # status at index 8
+            
+            # Создаем клавиатуру для проверки статуса
+            from aiogram.types import InlineKeyboardMarkup, InlineKeyboardButton
+            waitlist_keyboard = InlineKeyboardMarkup(
+                inline_keyboard=[
+                    [InlineKeyboardButton(text="📊 Проверить статус", callback_data="check_waitlist_status")],
+                    [InlineKeyboardButton(text="❌ Покинуть очередь", callback_data="leave_waitlist")]
+                ]
             )
-            return
-        elif waitlist_entry and waitlist_entry[9] in ['waiting', 'notified', 'declined']:
-            # Проверяем, есть ли свободные слоты
-            max_runners = get_setting("max_runners")
-            current_runners = get_participant_count_by_role("runner")
             
-            # Ensure we have valid integers for calculation
-            try:
-                max_runners = int(max_runners) if max_runners is not None else 0
-                current_runners = int(current_runners) if current_runners is not None else 0
-            except (ValueError, TypeError):
-                max_runners = 0
-                current_runners = 0
-            
-            available_slots = max_runners - current_runners if max_runners > 0 else 0
-            
-            if available_slots > 0:
-                # Есть свободные места - предлагаем принять участие
-                from .waitlist_handlers import create_participation_confirmation_keyboard
-                await message.answer(
-                    f"🎉 <b>Отличные новости!</b>\n\n"
-                    f"Для вас освободилось место!\n\n"
-                    f"📊 Доступно мест: {available_slots} из {max_runners}\n"
-                    f"⏰ <b>Хотите принять участие?</b>",
-                    reply_markup=create_participation_confirmation_keyboard()
+            if status == "notified":
+                # Пользователь уведомлен о доступном месте
+                message_text = (
+                    f"🎉 <b>{name}, для вас освободилось место!</b>\n\n"
+                    f"📋 Вы находитесь в очереди ожидания на роль {role_display}.\n"
+                    f"📬 Вам было отправлено уведомление о подтверждении участия.\n\n"
+                    f"⏰ <b>Важно:</b> У вас есть ограниченное время для подтверждения!\n\n"
+                    f"💡 Найдите сообщение с кнопками подтверждения в этом чате."
                 )
             else:
-                # Мест нет - сообщаем о статусе
-                await message.answer(
-                    "📋 Вы находитесь в очереди ожидания!\n\n"
-                    f"📊 Занято мест: {current_runners} из {max_runners}\n"
-                    f"⏳ Ожидайте освобождения места.\n\n"
-                    f"💡 Используйте /waitlist_status для проверки позиции."
+                # Обычное ожидание
+                message_text = (
+                    f"📋 <b>{name}, вы в очереди ожидания!</b>\n\n"
+                    f"🔢 <b>Ваша позиция:</b> {position} из {total_waiting}\n"
+                    f"👥 <b>Роль:</b> {role_display}\n\n"
+                    f"⏳ <b>Ожидайте уведомления о свободном месте.</b>\n"
+                    f"Мы автоматически сообщим вам, когда освободится место!\n\n"
+                    f"📱 Следите за уведомлениями в этом чате."
                 )
+            
+            await message.answer(message_text, reply_markup=waitlist_keyboard)
             return
     
     # Добавляем в pending_registrations
@@ -262,7 +261,11 @@ async def handle_start_command(message: Message, state: FSMContext, bot: Bot, ad
     
     # Отправляем стартовое сообщение с афишей если есть
     try:
-        start_message = messages["start_message"].format(fee=get_participation_fee_text())
+        start_message = messages["start_message"].format(
+            fee=get_participation_fee_text(),
+            event_date=get_event_date_text(),
+            event_location=get_event_location_text()
+        )
         
         afisha_path = "/app/images/afisha.jpeg"
         if os.path.exists(afisha_path):
@@ -280,7 +283,11 @@ async def handle_start_command(message: Message, state: FSMContext, bot: Bot, ad
     except Exception as e:
         logger.error(f"Ошибка при отправке стартового сообщения: {e}")
         await message.answer(
-            messages["start_message"].format(fee=get_participation_fee_text()),
+            messages["start_message"].format(
+                fee=get_participation_fee_text(),
+                event_date=get_event_date_text(),
+                event_location=get_event_location_text()
+            ),
             reply_markup=create_start_registration_keyboard()
         )
 

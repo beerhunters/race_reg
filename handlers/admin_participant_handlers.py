@@ -51,6 +51,9 @@ from database import (
     set_result,
     clear_participants,
     get_participants_by_role,
+    promote_waitlist_user_by_id,
+    get_waitlist_by_user_id,
+    demote_participant_to_waitlist,
 )
 
 
@@ -575,13 +578,40 @@ def register_admin_participant_handlers(dp: Dispatcher, bot: Bot, admin_id: int)
             text += f"• Незавершённых регистраций: {pending_reg_count}\n"
             text += f"• В очереди ожидания: {waitlist_count}\n\n"
 
-            # Registration status
-            if runner_count >= max_runners:
-                text += "🔴 <b>Статус:</b> Регистрация закрыта (достигнут лимит)\n"
+            # Registration status - check date first, then limits
+            status_emoji = ""
+            status_text = ""
+            
+            # Check if registration period has ended
+            registration_closed_by_date = False
+            if reg_end_date != "не установлена":
+                try:
+                    from datetime import datetime
+                    from pytz import timezone
+                    
+                    end_date = datetime.strptime(reg_end_date, "%H:%M %d.%m.%Y")
+                    moscow_tz = timezone("Europe/Moscow")
+                    end_date = moscow_tz.localize(end_date)
+                    current_time = datetime.now(moscow_tz)
+                    registration_closed_by_date = current_time > end_date
+                except Exception as e:
+                    logger.warning(f"Ошибка при проверке даты окончания регистрации: {e}")
+            
+            # Determine status based on date and limits
+            if registration_closed_by_date:
+                status_emoji = "🔴"
+                status_text = "Регистрация закрыта (время вышло)"
+            elif runner_count >= max_runners:
+                status_emoji = "🔴" 
+                status_text = "Регистрация закрыта (достигнут лимит)"
             elif waitlist_count > 0:
-                text += "🟡 <b>Статус:</b> Есть очередь ожидания\n"
+                status_emoji = "🟡"
+                status_text = "Есть очередь ожидания"
             else:
-                text += "🟢 <b>Статус:</b> Регистрация открыта\n"
+                status_emoji = "🟢"
+                status_text = "Регистрация открыта"
+            
+            text += f"{status_emoji} <b>Статус:</b> {status_text}\n"
 
             await message.answer(text)
 
@@ -871,6 +901,330 @@ def register_admin_participant_handlers(dp: Dispatcher, bot: Bot, admin_id: int)
     @dp.callback_query(F.data == "admin_remove")
     async def callback_remove(callback_query: CallbackQuery, state: FSMContext):
         await remove_participant(callback_query, state)
+
+    async def promote_from_waitlist(event: [Message, CallbackQuery], state: FSMContext):
+        """Promote user from waitlist to participants by user ID"""
+        user_id = event.from_user.id
+        if user_id != admin_id:
+            await event.answer("❌ Доступ запрещен. Эта команда только для администратора.")
+            return
+            
+        logger.info(f"Команда /promote_from_waitlist от user_id={user_id}")
+        
+        if isinstance(event, CallbackQuery):
+            await event.message.delete()
+            message = event.message
+        else:
+            await event.delete()
+            message = event
+
+        # Extract user_id from command text
+        command_text = event.text if hasattr(event, 'text') and event.text else ""
+        
+        if not command_text or len(command_text.split()) < 2:
+            await message.answer(
+                "❌ <b>Использование:</b> /promote_from_waitlist ID_пользователя\n\n"
+                "<b>Пример:</b> /promote_from_waitlist 123456789\n\n"
+                "Эта команда переведет пользователя из очереди ожидания в участники "
+                "и автоматически увеличит лимит участников."
+            )
+            return
+
+        try:
+            target_user_id = int(command_text.split()[1])
+        except (ValueError, IndexError):
+            await message.answer("❌ Некорректный ID пользователя. Укажите числовой ID.")
+            return
+
+        # Check if user exists in waitlist
+        waitlist_user = get_waitlist_by_user_id(target_user_id)
+        if not waitlist_user:
+            await message.answer(f"❌ Пользователь с ID <code>{target_user_id}</code> не найден в очереди ожидания.")
+            return
+
+        # Get user name from waitlist for display
+        user_name = waitlist_user[3]  # name is at index 3
+        user_role = waitlist_user[5]  # role is at index 5
+        
+        # Promote user
+        result = promote_waitlist_user_by_id(target_user_id)
+        
+        if result["success"]:
+            role_display = "бегунов" if user_role == "runner" else "волонтёров"
+            success_message = (
+                f"✅ <b>Пользователь добавлен в участники!</b>\n\n"
+                f"👤 <b>Имя:</b> {result['user_name']}\n"
+                f"🆔 <b>ID:</b> <code>{result['user_id']}</code>\n"
+                f"👥 <b>Роль:</b> {user_role}\n\n"
+                f"📊 <b>Лимит {role_display}:</b> {result['old_limit']} → {result['new_limit']}\n\n"
+                f"Пользователь переведен из очереди ожидания в список участников. "
+                f"Лимит автоматически увеличен."
+            )
+            await message.answer(success_message)
+            
+            # Notify the user
+            try:
+                await bot.send_message(
+                    target_user_id,
+                    f"🎉 <b>Отличные новости!</b>\n\n"
+                    f"Вы переведены из очереди ожидания в список участников!\n\n"
+                    f"📝 <b>Ваши данные:</b>\n"
+                    f"• Имя: {result['user_name']}\n"
+                    f"• Роль: {user_role}\n\n"
+                    f"💰 Не забудьте произвести оплату участия, если требуется!"
+                )
+                logger.info(f"Уведомление о переводе отправлено пользователю {target_user_id}")
+            except Exception as e:
+                logger.warning(f"Не удалось отправить уведомление пользователю {target_user_id}: {e}")
+                
+        else:
+            error_message = f"❌ <b>Ошибка при переводе пользователя:</b>\n\n{result['error']}"
+            await message.answer(error_message)
+
+    @dp.message(Command("promote_from_waitlist"))
+    async def cmd_promote_from_waitlist(message: Message, state: FSMContext):
+        await promote_from_waitlist(message, state)
+
+    async def demote_to_waitlist(event: [Message, CallbackQuery], state: FSMContext):
+        """Move participant to waitlist by user ID"""
+        user_id = event.from_user.id
+        if user_id != admin_id:
+            await event.answer("❌ Доступ запрещен. Эта команда только для администратора.")
+            return
+            
+        logger.info(f"Команда /demote_to_waitlist от user_id={user_id}")
+        
+        if isinstance(event, CallbackQuery):
+            await event.message.delete()
+            message = event.message
+        else:
+            await event.delete()
+            message = event
+
+        # Extract user_id from command text
+        command_text = event.text if hasattr(event, 'text') and event.text else ""
+        
+        if not command_text or len(command_text.split()) < 2:
+            await message.answer(
+                "❌ <b>Использование:</b> /demote_to_waitlist ID_пользователя\n\n"
+                "<b>Пример:</b> /demote_to_waitlist 123456789\n\n"
+                "Эта команда переведет участника в очередь ожидания "
+                "и автоматически уменьшит лимит участников."
+            )
+            return
+
+        try:
+            target_user_id = int(command_text.split()[1])
+        except (ValueError, IndexError):
+            await message.answer("❌ Некорректный ID пользователя. Укажите числовой ID.")
+            return
+
+        # Check if user exists in participants
+        participant = get_participant_by_user_id(target_user_id)
+        if not participant:
+            await message.answer(f"❌ Пользователь с ID <code>{target_user_id}</code> не найден в списке участников.")
+            return
+
+        # Get user name from participants for display
+        user_name = participant[2]  # name is at index 2
+        user_role = participant[4]  # role is at index 4
+        
+        # Demote user
+        result = demote_participant_to_waitlist(target_user_id)
+        
+        if result["success"]:
+            role_display = "бегунов" if user_role == "runner" else "волонтёров"
+            success_message = (
+                f"✅ <b>Пользователь переведен в очередь ожидания!</b>\n\n"
+                f"👤 <b>Имя:</b> {result['user_name']}\n"
+                f"🆔 <b>ID:</b> <code>{result['user_id']}</code>\n"
+                f"👥 <b>Роль:</b> {user_role}\n\n"
+                f"📊 <b>Лимит {role_display}:</b> {result['old_limit']} → {result['new_limit']}\n\n"
+                f"Пользователь переведен из списка участников в очередь ожидания. "
+                f"Лимит автоматически уменьшен."
+            )
+            await message.answer(success_message)
+            
+            # Notify the user
+            try:
+                await bot.send_message(
+                    target_user_id,
+                    f"📋 <b>Изменение статуса участия</b>\n\n"
+                    f"Вы переведены в очередь ожидания.\n\n"
+                    f"📝 <b>Ваши данные:</b>\n"
+                    f"• Имя: {result['user_name']}\n"
+                    f"• Роль: {user_role}\n\n"
+                    f"💡 Мы уведомим вас, когда снова освободится место!"
+                )
+                logger.info(f"Уведомление о переводе в очередь отправлено пользователю {target_user_id}")
+            except Exception as e:
+                logger.warning(f"Не удалось отправить уведомление пользователю {target_user_id}: {e}")
+                
+        else:
+            error_message = f"❌ <b>Ошибка при переводе пользователя:</b>\n\n{result['error']}"
+            await message.answer(error_message)
+
+    @dp.message(Command("demote_to_waitlist"))
+    async def cmd_demote_to_waitlist(message: Message, state: FSMContext):
+        await demote_to_waitlist(message, state)
+
+    @dp.callback_query(F.data == "admin_promote_from_waitlist")
+    async def callback_promote_from_waitlist(callback_query: CallbackQuery, state: FSMContext):
+        if callback_query.from_user.id != admin_id:
+            await callback_query.answer("❌ Доступ запрещен")
+            return
+            
+        await callback_query.message.edit_text(
+            "⬆️ <b>Перевод из очереди ожидания</b>\n\n"
+            "Введите ID пользователя, которого нужно перевести из очереди ожидания в участники:\n\n"
+            "💡 ID можно найти в списке очереди ожидания (/waitlist)",
+            reply_markup=create_back_keyboard()
+        )
+        await state.set_state(RegistrationForm.waiting_for_promote_id)
+        await callback_query.answer()
+
+    @dp.message(RegistrationForm.waiting_for_promote_id)
+    async def process_promote_id(message: Message, state: FSMContext):
+        if message.from_user.id != admin_id:
+            return
+
+        await message.delete()
+        
+        try:
+            target_user_id = int(message.text.strip())
+        except ValueError:
+            await message.answer("❌ Некорректный ID пользователя. Укажите числовой ID.")
+            return
+
+        # Check if user exists in waitlist
+        waitlist_user = get_waitlist_by_user_id(target_user_id)
+        if not waitlist_user:
+            await message.answer(
+                f"❌ Пользователь с ID <code>{target_user_id}</code> не найден в очереди ожидания.\n\n"
+                "Проверьте ID в списке очереди ожидания (/waitlist).",
+                reply_markup=create_back_keyboard()
+            )
+            return
+
+        # Get user name from waitlist for display
+        user_name = waitlist_user[3]  # name is at index 3
+        user_role = waitlist_user[5]  # role is at index 5
+        
+        # Promote user
+        result = promote_waitlist_user_by_id(target_user_id)
+        
+        if result["success"]:
+            role_display = "бегунов" if user_role == "runner" else "волонтёров"
+            success_message = (
+                f"✅ <b>Пользователь добавлен в участники!</b>\n\n"
+                f"👤 <b>Имя:</b> {result['user_name']}\n"
+                f"🆔 <b>ID:</b> <code>{result['user_id']}</code>\n"
+                f"👥 <b>Роль:</b> {user_role}\n\n"
+                f"📊 <b>Лимит {role_display}:</b> {result['old_limit']} → {result['new_limit']}\n\n"
+                f"Пользователь переведен из очереди ожидания в список участников. "
+                f"Лимит автоматически увеличен."
+            )
+            await message.answer(success_message, reply_markup=create_back_keyboard())
+            
+            # Notify the user
+            try:
+                await bot.send_message(
+                    target_user_id,
+                    f"🎉 <b>Отличные новости!</b>\n\n"
+                    f"Вы переведены из очереди ожидания в список участников!\n\n"
+                    f"📝 <b>Ваши данные:</b>\n"
+                    f"• Имя: {result['user_name']}\n"
+                    f"• Роль: {user_role}\n\n"
+                    f"💰 Не забудьте произвести оплату участия, если требуется!"
+                )
+                logger.info(f"Уведомление о переводе отправлено пользователю {target_user_id}")
+            except Exception as e:
+                logger.warning(f"Не удалось отправить уведомление пользователю {target_user_id}: {e}")
+                
+        else:
+            error_message = f"❌ <b>Ошибка при переводе пользователя:</b>\n\n{result['error']}"
+            await message.answer(error_message, reply_markup=create_back_keyboard())
+
+        await state.clear()
+
+    @dp.callback_query(F.data == "admin_demote_to_waitlist")
+    async def callback_demote_to_waitlist(callback_query: CallbackQuery, state: FSMContext):
+        if callback_query.from_user.id != admin_id:
+            await callback_query.answer("❌ Доступ запрещен")
+            return
+            
+        await callback_query.message.edit_text(
+            "⬇️ <b>Перевод в очередь ожидания</b>\n\n"
+            "Введите ID участника, которого нужно перевести в очередь ожидания:\n\n"
+            "💡 ID можно найти в списке участников (/participants)",
+            reply_markup=create_back_keyboard()
+        )
+        await state.set_state(RegistrationForm.waiting_for_demote_id)
+        await callback_query.answer()
+
+    @dp.message(RegistrationForm.waiting_for_demote_id)
+    async def process_demote_id(message: Message, state: FSMContext):
+        if message.from_user.id != admin_id:
+            return
+
+        await message.delete()
+        
+        try:
+            target_user_id = int(message.text.strip())
+        except ValueError:
+            await message.answer("❌ Некорректный ID пользователя. Укажите числовой ID.")
+            return
+
+        # Check if user exists in participants
+        participant = get_participant_by_user_id(target_user_id)
+        if not participant:
+            await message.answer(
+                f"❌ Пользователь с ID <code>{target_user_id}</code> не найден в списке участников.\n\n"
+                "Проверьте ID в списке участников (/participants).",
+                reply_markup=create_back_keyboard()
+            )
+            return
+
+        # Get user name from participants for display
+        user_name = participant[2]  # name is at index 2
+        user_role = participant[4]  # role is at index 4
+        
+        # Demote user
+        result = demote_participant_to_waitlist(target_user_id)
+        
+        if result["success"]:
+            role_display = "бегунов" if user_role == "runner" else "волонтёров"
+            success_message = (
+                f"✅ <b>Пользователь переведен в очередь ожидания!</b>\n\n"
+                f"👤 <b>Имя:</b> {result['user_name']}\n"
+                f"🆔 <b>ID:</b> <code>{result['user_id']}</code>\n"
+                f"👥 <b>Роль:</b> {user_role}\n\n"
+                f"📊 <b>Лимит {role_display}:</b> {result['old_limit']} → {result['new_limit']}\n\n"
+                f"Пользователь переведен из списка участников в очередь ожидания. "
+                f"Лимит автоматически уменьшен."
+            )
+            await message.answer(success_message, reply_markup=create_back_keyboard())
+            
+            # Notify the user
+            try:
+                await bot.send_message(
+                    target_user_id,
+                    f"📋 <b>Изменение статуса участия</b>\n\n"
+                    f"Вы переведены в очередь ожидания.\n\n"
+                    f"📝 <b>Ваши данные:</b>\n"
+                    f"• Имя: {result['user_name']}\n"
+                    f"• Роль: {user_role}\n\n"
+                    f"💡 Мы уведомим вас, когда снова освободится место!"
+                )
+                logger.info(f"Уведомление о переводе в очередь отправлено пользователю {target_user_id}")
+            except Exception as e:
+                logger.warning(f"Не удалось отправить уведомление пользователю {target_user_id}: {e}")
+                
+        else:
+            error_message = f"❌ <b>Ошибка при переводе пользователя:</b>\n\n{result['error']}"
+            await message.answer(error_message, reply_markup=create_back_keyboard())
+
+        await state.clear()
 
     async def export_participants(event: [Message, CallbackQuery], state: FSMContext):
         user_id = event.from_user.id

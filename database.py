@@ -1686,3 +1686,148 @@ def clear_all_clusters() -> bool:
     except sqlite3.Error as e:
         logger.error(f"Ошибка при очистке кластеров: {e}")
         return False
+
+
+def promote_waitlist_user_by_id(user_id: int) -> dict:
+    """Promote user from waitlist to participants by user_id and increase limit automatically"""
+    try:
+        with sqlite3.connect(DB_PATH, timeout=10) as conn:
+            cursor = conn.cursor()
+            
+            # Get user data from waitlist
+            cursor.execute(
+                """
+                SELECT username, name, target_time, role, gender
+                FROM waitlist WHERE user_id = ?
+                """,
+                (user_id,)
+            )
+            user_data = cursor.fetchone()
+            
+            if not user_data:
+                return {"success": False, "error": "Пользователь не найден в списке ожидания"}
+            
+            username, name, target_time, role, gender = user_data
+            
+            # Get current participant count and limit for this role
+            current_count = get_participant_count_by_role(role)
+            current_limit = get_setting(f"max_{role}s")  # max_runners or max_volunteers
+            
+            if current_limit is None:
+                current_limit = 0
+            else:
+                try:
+                    current_limit = int(current_limit)
+                except (ValueError, TypeError):
+                    current_limit = 0
+            
+            # Calculate new limit (current participants + 1)
+            new_limit = current_count + 1
+            
+            # If new limit is greater than current limit, update the limit
+            if new_limit > current_limit:
+                success = set_setting(f"max_{role}s", new_limit)
+                if not success:
+                    return {"success": False, "error": "Ошибка при обновлении лимита"}
+                logger.info(f"Лимит {role}s увеличен с {current_limit} до {new_limit}")
+            
+            # Add user to participants
+            success = add_participant(user_id, username, name, target_time, role, gender)
+            
+            if not success:
+                return {"success": False, "error": "Ошибка при добавлении в участники"}
+            
+            # Remove from waitlist
+            cursor.execute("DELETE FROM waitlist WHERE user_id = ?", (user_id,))
+            
+            # Remove from pending_registrations if exists
+            cursor.execute("DELETE FROM pending_registrations WHERE user_id = ?", (user_id,))
+            
+            conn.commit()
+            
+            logger.info(f"Пользователь {name} (ID: {user_id}) переведен из очереди ожидания в участники. "
+                       f"Лимит {role}s: {current_limit} -> {new_limit}")
+            
+            return {
+                "success": True,
+                "user_name": name,
+                "user_id": user_id,
+                "role": role,
+                "old_limit": current_limit,
+                "new_limit": new_limit
+            }
+            
+    except sqlite3.Error as e:
+        logger.error(f"Ошибка при переводе пользователя {user_id} из очереди ожидания: {e}")
+        return {"success": False, "error": f"Ошибка базы данных: {e}"}
+
+
+def demote_participant_to_waitlist(user_id: int) -> dict:
+    """Move participant to waitlist and decrease limit automatically"""
+    try:
+        with sqlite3.connect(DB_PATH, timeout=10) as conn:
+            cursor = conn.cursor()
+            
+            # Get user data from participants
+            cursor.execute(
+                """
+                SELECT username, name, target_time, role, gender
+                FROM participants WHERE user_id = ?
+                """,
+                (user_id,)
+            )
+            user_data = cursor.fetchone()
+            
+            if not user_data:
+                return {"success": False, "error": "Пользователь не найден в списке участников"}
+            
+            username, name, target_time, role, gender = user_data
+            
+            # Get current participant count and limit for this role
+            current_count = get_participant_count_by_role(role)
+            current_limit = get_setting(f"max_{role}s")  # max_runners or max_volunteers
+            
+            if current_limit is None:
+                current_limit = 0
+            else:
+                try:
+                    current_limit = int(current_limit)
+                except (ValueError, TypeError):
+                    current_limit = 0
+            
+            # Calculate new limit (current participants - 1, but not less than current_count - 1)
+            new_limit = max(current_count - 1, 0)
+            
+            # Update the limit only if it changes
+            if new_limit != current_limit:
+                success = set_setting(f"max_{role}s", new_limit)
+                if not success:
+                    return {"success": False, "error": "Ошибка при обновлении лимита"}
+                logger.info(f"Лимит {role}s уменьшен с {current_limit} до {new_limit}")
+            
+            # Add user to waitlist
+            success = add_to_waitlist(user_id, username, name, target_time, role, gender)
+            
+            if not success:
+                return {"success": False, "error": "Ошибка при добавлении в очередь ожидания"}
+            
+            # Remove from participants
+            cursor.execute("DELETE FROM participants WHERE user_id = ?", (user_id,))
+            
+            conn.commit()
+            
+            logger.info(f"Пользователь {name} (ID: {user_id}) переведен из участников в очередь ожидания. "
+                       f"Лимит {role}s: {current_limit} -> {new_limit}")
+            
+            return {
+                "success": True,
+                "user_name": name,
+                "user_id": user_id,
+                "role": role,
+                "old_limit": current_limit,
+                "new_limit": new_limit
+            }
+            
+    except sqlite3.Error as e:
+        logger.error(f"Ошибка при переводе пользователя {user_id} в очередь ожидания: {e}")
+        return {"success": False, "error": f"Ошибка базы данных: {e}"}

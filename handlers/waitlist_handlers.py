@@ -12,6 +12,7 @@ from aiogram.exceptions import TelegramBadRequest, TelegramForbiddenError
 from logging_config import get_logger
 
 logger = get_logger(__name__)
+from handlers.utils import get_participation_fee_text
 from database import (
     get_waitlist_by_role,
     get_waitlist_position,
@@ -25,6 +26,7 @@ from database import (
     get_participant_count_by_role,
     get_setting,
     cleanup_blocked_user,
+    get_waitlist_by_user_id,
 )
 
 
@@ -151,18 +153,31 @@ async def handle_waitlist_callback(callback: CallbackQuery, bot: Bot, admin_id: 
     user_id = callback.from_user.id
     
     if callback.data == "stay_in_waitlist":
-        await callback.message.edit_text(
-            "✅ Вы остались в очереди ожидания. Уведомим вас, когда освободится место!"
-        )
+        try:
+            await callback.message.edit_text(
+                "✅ Вы остались в очереди ожидания. Уведомим вас, когда освободится место!"
+            )
+        except TelegramBadRequest as e:
+            logger.warning(f"Не удалось отредактировать сообщение: {e}")
+            await callback.message.answer(
+                "✅ Вы остались в очереди ожидания. Уведомим вас, когда освободится место!"
+            )
     
     elif callback.data == "leave_waitlist":
         success = remove_from_waitlist(user_id)
         
         if success:
-            await callback.message.edit_text(
-                "❌ Вы покинули очередь ожидания. "
-                "Для повторной регистрации используйте /start."
-            )
+            try:
+                await callback.message.edit_text(
+                    "❌ Вы покинули очередь ожидания. "
+                    "Для повторной регистрации используйте /start."
+                )
+            except TelegramBadRequest as e:
+                logger.warning(f"Не удалось отредактировать сообщение: {e}")
+                await callback.message.answer(
+                    "❌ Вы покинули очередь ожидания. "
+                    "Для повторной регистрации используйте /start."
+                )
             
             # Notify admin
             try:
@@ -174,9 +189,15 @@ async def handle_waitlist_callback(callback: CallbackQuery, bot: Bot, admin_id: 
             except Exception as e:
                 logger.error(f"Ошибка при уведомлении администратора: {e}")
         else:
-            await callback.message.edit_text(
-                "❌ Произошла ошибка при удалении из очереди. Попробуйте позже."
-            )
+            try:
+                await callback.message.edit_text(
+                    "❌ Произошла ошибка при удалении из очереди. Попробуйте позже."
+                )
+            except TelegramBadRequest as e:
+                logger.warning(f"Не удалось отредактировать сообщение: {e}")
+                await callback.message.answer(
+                    "❌ Произошла ошибка при удалении из очереди. Попробуйте позже."
+                )
     
     await callback.answer()
 
@@ -189,12 +210,21 @@ async def handle_participation_confirmation(callback: CallbackQuery, bot: Bot, a
         success = confirm_waitlist_participation(user_id)
         
         if success:
-            await callback.message.edit_text(
-                "✅ <b>Участие подтверждено!</b>\n\n"
-                "Вы были переведены из очереди ожидания в список участников.\n"
-                f"💰 Не забудьте произвести оплату участия {get_participation_fee_text()}!\n\n"
-                "📱 Свяжитесь с администратором для подтверждения оплаты."
-            )
+            try:
+                await callback.message.edit_text(
+                    "✅ <b>Участие подтверждено!</b>\n\n"
+                    "Вы были переведены из очереди ожидания в список участников.\n"
+                    f"💰 Не забудьте произвести оплату участия {get_participation_fee_text()}!\n\n"
+                    "📱 Свяжитесь с администратором для подтверждения оплаты."
+                )
+            except TelegramBadRequest as e:
+                logger.warning(f"Не удалось отредактировать сообщение: {e}")
+                await callback.message.answer(
+                    "✅ <b>Участие подтверждено!</b>\n\n"
+                    "Вы были переведены из очереди ожидания в список участников.\n"
+                    f"💰 Не забудьте произвести оплату участия {get_participation_fee_text()}!\n\n"
+                    "📱 Свяжитесь с администратором для подтверждения оплаты."
+                )
             
             # Notify admin about confirmation
             try:
@@ -221,20 +251,35 @@ async def handle_participation_confirmation(callback: CallbackQuery, bot: Bot, a
             except Exception as e:
                 logger.error(f"Ошибка при уведомлении администратора о подтверждении: {e}")
         else:
-            await callback.message.edit_text(
-                "❌ Произошла ошибка при подтверждении участия. "
-                "Возможно, место уже занято другим участником."
-            )
+            try:
+                await callback.message.edit_text(
+                    "❌ Произошла ошибка при подтверждении участия. "
+                    "Возможно, место уже занято другим участником."
+                )
+            except TelegramBadRequest as e:
+                logger.warning(f"Не удалось отредактировать сообщение: {e}")
+                await callback.message.answer(
+                    "❌ Произошла ошибка при подтверждении участия. "
+                    "Возможно, место уже занято другим участником."
+                )
     
     elif callback.data == "decline_participation":
         success = decline_waitlist_participation(user_id)
         
         if success:
-            await callback.message.edit_text(
-                "❌ <b>Участие отклонено</b>\n\n"
-                "Вы остались в очереди ожидания. "
-                "Мы уведомим вас, когда освободится следующее место."
-            )
+            try:
+                await callback.message.edit_text(
+                    "❌ <b>Участие отклонено</b>\n\n"
+                    "Вы остались в очереди ожидания. "
+                    "Мы уведомим вас, когда освободится следующее место."
+                )
+            except TelegramBadRequest as e:
+                logger.warning(f"Не удалось отредактировать сообщение: {e}")
+                await callback.message.answer(
+                    "❌ <b>Участие отклонено</b>\n\n"
+                    "Вы остались в очереди ожидания. "
+                    "Мы уведомим вас, когда освободится следующее место."
+                )
             
             # Check if we can notify next person in queue
             try:
@@ -242,11 +287,112 @@ async def handle_participation_confirmation(callback: CallbackQuery, bot: Bot, a
             except Exception as e:
                 logger.error(f"Ошибка при обработке очереди после отклонения: {e}")
         else:
-            await callback.message.edit_text(
-                "❌ Произошла ошибка при обработке вашего ответа. Попробуйте позже."
-            )
+            try:
+                await callback.message.edit_text(
+                    "❌ Произошла ошибка при обработке вашего ответа. Попробуйте позже."
+                )
+            except TelegramBadRequest as e:
+                logger.warning(f"Не удалось отредактировать сообщение: {e}")
+                await callback.message.answer(
+                    "❌ Произошла ошибка при обработке вашего ответа. Попробуйте позже."
+                )
     
     await callback.answer()
+
+
+async def handle_check_waitlist_status(callback: CallbackQuery, bot: Bot, admin_id: int):
+    """Handle check waitlist status callback"""
+    user_id = callback.from_user.id
+    
+    if not is_user_in_waitlist(user_id):
+        try:
+            await callback.message.edit_text(
+                "❌ Вы не находитесь в очереди ожидания.\n\n"
+                "Используйте /start для регистрации."
+            )
+        except TelegramBadRequest as e:
+            logger.warning(f"Не удалось отредактировать сообщение: {e}")
+            await callback.message.answer(
+                "❌ Вы не находитесь в очереди ожидания.\n\n"
+                "Используйте /start для регистрации."
+            )
+        await callback.answer()
+        return
+    
+    # Get waitlist info
+    waitlist_entry = get_waitlist_by_user_id(user_id)
+    if waitlist_entry:
+        position, total_waiting = get_waitlist_position(user_id)
+        name = waitlist_entry[3]  # name at index 3
+        role = waitlist_entry[5]  # role at index 5
+        role_display = "бегуна" if role == "runner" else "волонтёра"
+        status = waitlist_entry[8]  # status at index 8
+        created_at = waitlist_entry[7]  # created_at at index 7
+        
+        # Format date
+        try:
+            from datetime import datetime
+            date_obj = datetime.fromisoformat(created_at.replace('Z', '+00:00'))
+            formatted_date = date_obj.strftime("%d.%m.%Y %H:%M")
+        except:
+            formatted_date = created_at
+        
+        # Create keyboard
+        from aiogram.types import InlineKeyboardMarkup, InlineKeyboardButton
+        status_keyboard = InlineKeyboardMarkup(
+            inline_keyboard=[
+                [InlineKeyboardButton(text="🔄 Обновить статус", callback_data="check_waitlist_status")],
+                [InlineKeyboardButton(text="❌ Покинуть очередь", callback_data="leave_waitlist")]
+            ]
+        )
+        
+        # Status message
+        status_emoji = {
+            "waiting": "⏳",
+            "notified": "📬",
+            "confirmed": "✅",
+            "declined": "❌"
+        }.get(status, "❓")
+        
+        status_text = {
+            "waiting": "ожидание",
+            "notified": "уведомлен о месте",
+            "confirmed": "подтвержден",
+            "declined": "отклонен"
+        }.get(status, "неизвестно")
+        
+        message_text = (
+            f"📊 <b>Статус в очереди ожидания</b>\n\n"
+            f"👤 <b>Имя:</b> {name}\n"
+            f"🔢 <b>Позиция:</b> {position} из {total_waiting}\n"
+            f"👥 <b>Роль:</b> {role_display}\n"
+            f"📅 <b>Дата регистрации:</b> {formatted_date}\n"
+            f"📊 <b>Статус:</b> {status_emoji} {status_text}\n\n"
+        )
+        
+        if status == "notified":
+            message_text += (
+                f"🎉 <b>Для вас освободилось место!</b>\n"
+                f"Найдите сообщение с кнопками подтверждения."
+            )
+        elif status == "waiting":
+            message_text += (
+                f"⏳ <b>Ожидайте уведомления.</b>\n"
+                f"Мы сообщим, когда освободится место."
+            )
+        elif status == "confirmed":
+            message_text += (
+                f"✅ <b>Участие подтверждено!</b>\n"
+                f"Ожидайте обработки администратором."
+            )
+        
+        try:
+            await callback.message.edit_text(message_text, reply_markup=status_keyboard)
+        except TelegramBadRequest as e:
+            logger.warning(f"Не удалось отредактировать сообщение: {e}")
+            await callback.message.answer(message_text, reply_markup=status_keyboard)
+    
+    await callback.answer("📊 Статус обновлен")
 
 
 async def handle_admin_waitlist_command(message: Message):
@@ -412,6 +558,9 @@ def register_waitlist_handlers(dp: Dispatcher, bot: Bot, admin_id: int):
     async def participation_callback_wrapper(callback: CallbackQuery):
         await handle_participation_confirmation(callback, bot, admin_id)
     
+    async def check_status_callback_wrapper(callback: CallbackQuery):
+        await handle_check_waitlist_status(callback, bot, admin_id)
+    
     dp.callback_query.register(
         waitlist_callback_wrapper,
         F.data.in_(["stay_in_waitlist", "leave_waitlist"])
@@ -421,6 +570,12 @@ def register_waitlist_handlers(dp: Dispatcher, bot: Bot, admin_id: int):
     dp.callback_query.register(
         participation_callback_wrapper,
         F.data.in_(["confirm_participation", "decline_participation"])
+    )
+    
+    # Check status callback
+    dp.callback_query.register(
+        check_status_callback_wrapper,
+        F.data == "check_waitlist_status"
     )
     
     logger.info("Обработчики очереди ожидания зарегистрированы")

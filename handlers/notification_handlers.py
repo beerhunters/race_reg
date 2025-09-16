@@ -15,6 +15,8 @@ from .utils import (
     RegistrationForm,
     create_confirmation_keyboard,
     get_participation_fee_text,
+    get_event_date_text,
+    get_event_location_text,
 )
 from database import (
     get_all_participants,
@@ -155,14 +157,22 @@ def register_notification_handlers(dp: Dispatcher, bot: Bot, admin_id: int):
                     await bot.send_photo(
                         chat_id=user_id,
                         photo=FSInputFile(afisha_path),
-                        caption=messages["notify_all_message"].format(fee=get_participation_fee_text()),
+                        caption=messages["notify_all_message"].format(
+                            fee=get_participation_fee_text(),
+                            event_date=get_event_date_text(),
+                            event_location=get_event_location_text()
+                        ),
                         reply_markup=create_confirmation_keyboard(),
                         parse_mode="HTML",
                     )
                 else:
                     await bot.send_message(
                         chat_id=user_id,
-                        text=messages["notify_all_message"].format(fee=get_participation_fee_text()),
+                        text=messages["notify_all_message"].format(
+                            fee=get_participation_fee_text(),
+                            event_date=get_event_date_text(),
+                            event_location=get_event_location_text()
+                        ),
                         reply_markup=create_confirmation_keyboard(),
                         parse_mode="HTML",
                     )
