@@ -89,6 +89,11 @@ class RegistrationForm(StatesGroup):
     # Backup restore states
     restore_backup = State()
 
+    # Team management states
+    selecting_team_member1 = State()
+    selecting_team_member2 = State()
+    waiting_for_team_result = State()
+
     processed = State()
 
 
@@ -251,6 +256,9 @@ def create_admin_commands_keyboard():
     commands = [
         InlineKeyboardButton(
             text="👥 Участники", callback_data="category_participants"
+        ),
+        InlineKeyboardButton(
+            text="🏆 Команды", callback_data="category_teams"
         ),
         InlineKeyboardButton(
             text="🏁 Управление гонкой", callback_data="category_race"

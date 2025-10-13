@@ -112,6 +112,23 @@ def register_admin_participant_handlers(dp: Dispatcher, bot: Bot, admin_id: int)
         )
         await callback.answer()
 
+    @dp.callback_query(F.data == "category_teams")
+    async def handle_teams_category(callback: CallbackQuery):
+        if callback.from_user.id != admin_id:
+            await callback.answer("❌ Доступ запрещен")
+            return
+
+        from handlers.team_handlers import create_team_management_keyboard
+
+        await callback.message.edit_text(
+            "🏆 <b>Управление командами</b>\n\n"
+            "Здесь вы можете управлять командами категории 'Команда'.\n"
+            "Результаты команд записываются отдельно от индивидуальных.\n\n"
+            "Выберите действие:",
+            reply_markup=create_team_management_keyboard(),
+        )
+        await callback.answer()
+
     @dp.callback_query(F.data == "category_notifications")
     async def handle_notifications_category(callback: CallbackQuery):
         if callback.from_user.id != admin_id:
@@ -1518,15 +1535,18 @@ def register_admin_participant_handlers(dp: Dispatcher, bot: Bot, admin_id: int)
             await event.delete()
             message = event
 
-        # Get all runners with bib numbers
+        # Get all runners with bib numbers, excluding team category
+        # Participant tuple: (user_id, username, name, target_time, role, reg_date, payment_status, bib_number, result, gender, category, cluster)
         participants = get_all_participants()
         runners = [
-            p for p in participants if p[4] == "runner" and p[7] is not None
-        ]  # role and bib_number
+            p for p in participants
+            if p[4] == "runner" and p[7] is not None and p[10] != "Команда"
+        ]  # role, bib_number, and category != "Команда"
 
         if not runners:
             await message.answer(
-                "❌ Нет бегунов с присвоенными номерами для записи результатов.",
+                "❌ Нет бегунов с присвоенными номерами для записи результатов.\n"
+                "Для команд используйте меню управления командами.",
                 reply_markup=create_back_keyboard("admin_menu"),
             )
             return

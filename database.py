@@ -144,6 +144,23 @@ def init_db():
                 """
             )
 
+            # Create teams table for team competitions
+            cursor.execute(
+                """
+                CREATE TABLE IF NOT EXISTS teams (
+                    team_id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    team_name TEXT NOT NULL,
+                    member1_id INTEGER NOT NULL,
+                    member2_id INTEGER NOT NULL,
+                    result TEXT,
+                    created_date TEXT NOT NULL,
+                    FOREIGN KEY (member1_id) REFERENCES participants (user_id),
+                    FOREIGN KEY (member2_id) REFERENCES participants (user_id),
+                    UNIQUE(member1_id, member2_id)
+                )
+                """
+            )
+
             conn.commit()
             logger.info("База данных инициализирована")
     except sqlite3.Error as e:
@@ -1831,3 +1848,213 @@ def demote_participant_to_waitlist(user_id: int) -> dict:
     except sqlite3.Error as e:
         logger.error(f"Ошибка при переводе пользователя {user_id} в очередь ожидания: {e}")
         return {"success": False, "error": f"Ошибка базы данных: {e}"}
+
+
+# ============================================================================
+# TEAMS MANAGEMENT FUNCTIONS
+# ============================================================================
+
+
+def create_team(member1_id: int, member2_id: int, team_name: str = None) -> dict:
+    """Create a team from two participants with category 'Команда'"""
+    try:
+        with sqlite3.connect(DB_PATH, timeout=10) as conn:
+            cursor = conn.cursor()
+
+            # Verify both members exist and have category 'Команда'
+            cursor.execute(
+                "SELECT user_id, name, category FROM participants WHERE user_id IN (?, ?)",
+                (member1_id, member2_id)
+            )
+            members = cursor.fetchall()
+
+            if len(members) != 2:
+                return {"success": False, "error": "Один или оба участника не найдены"}
+
+            # Check if both have category 'Команда'
+            for member in members:
+                if member[2] != "Команда":
+                    return {"success": False, "error": f"Участник {member[1]} не имеет категорию 'Команда'"}
+
+            # Check if either member is already in a team
+            cursor.execute(
+                "SELECT team_id FROM teams WHERE member1_id = ? OR member2_id = ? OR member1_id = ? OR member2_id = ?",
+                (member1_id, member1_id, member2_id, member2_id)
+            )
+            existing_team = cursor.fetchone()
+
+            if existing_team:
+                return {"success": False, "error": "Один или оба участника уже состоят в команде"}
+
+            # Generate team name if not provided
+            if not team_name:
+                member1_name = members[0][1] if members[0][0] == member1_id else members[1][1]
+                member2_name = members[1][1] if members[1][0] == member2_id else members[0][1]
+                team_name = f"Команда {member1_name.split()[0]} & {member2_name.split()[0]}"
+
+            # Create team
+            cursor.execute(
+                """
+                INSERT INTO teams (team_name, member1_id, member2_id, created_date)
+                VALUES (?, ?, ?, datetime('now'))
+                """,
+                (team_name, member1_id, member2_id)
+            )
+
+            team_id = cursor.lastrowid
+            conn.commit()
+
+            logger.info(f"Создана команда {team_name} (ID: {team_id}) из участников {member1_id} и {member2_id}")
+
+            return {
+                "success": True,
+                "team_id": team_id,
+                "team_name": team_name,
+                "member1_id": member1_id,
+                "member2_id": member2_id
+            }
+
+    except sqlite3.IntegrityError as e:
+        logger.error(f"Ошибка уникальности при создании команды: {e}")
+        return {"success": False, "error": "Эти участники уже объединены в команду"}
+    except sqlite3.Error as e:
+        logger.error(f"Ошибка при создании команды: {e}")
+        return {"success": False, "error": f"Ошибка базы данных: {e}"}
+
+
+def get_all_teams() -> list:
+    """Get all teams with member information"""
+    try:
+        with sqlite3.connect(DB_PATH) as conn:
+            cursor = conn.cursor()
+            cursor.execute(
+                """
+                SELECT t.team_id, t.team_name, t.result, t.created_date,
+                       p1.user_id, p1.name, p1.result as member1_result,
+                       p2.user_id, p2.name, p2.result as member2_result
+                FROM teams t
+                JOIN participants p1 ON t.member1_id = p1.user_id
+                JOIN participants p2 ON t.member2_id = p2.user_id
+                ORDER BY t.team_name ASC
+                """
+            )
+            return cursor.fetchall()
+    except sqlite3.Error as e:
+        logger.error(f"Ошибка при получении списка команд: {e}")
+        return []
+
+
+def get_team_by_id(team_id: int) -> tuple:
+    """Get team information by team_id"""
+    try:
+        with sqlite3.connect(DB_PATH) as conn:
+            cursor = conn.cursor()
+            cursor.execute(
+                """
+                SELECT t.team_id, t.team_name, t.result, t.created_date,
+                       p1.user_id, p1.name, p1.username, p1.result as member1_result,
+                       p2.user_id, p2.name, p2.username, p2.result as member2_result
+                FROM teams t
+                JOIN participants p1 ON t.member1_id = p1.user_id
+                JOIN participants p2 ON t.member2_id = p2.user_id
+                WHERE t.team_id = ?
+                """,
+                (team_id,)
+            )
+            return cursor.fetchone()
+    except sqlite3.Error as e:
+        logger.error(f"Ошибка при получении команды {team_id}: {e}")
+        return None
+
+
+def get_team_by_member(user_id: int) -> tuple:
+    """Get team information by member user_id"""
+    try:
+        with sqlite3.connect(DB_PATH) as conn:
+            cursor = conn.cursor()
+            cursor.execute(
+                """
+                SELECT t.team_id, t.team_name, t.result, t.created_date,
+                       p1.user_id, p1.name, p1.username, p1.result as member1_result,
+                       p2.user_id, p2.name, p2.username, p2.result as member2_result
+                FROM teams t
+                JOIN participants p1 ON t.member1_id = p1.user_id
+                JOIN participants p2 ON t.member2_id = p2.user_id
+                WHERE t.member1_id = ? OR t.member2_id = ?
+                """,
+                (user_id, user_id)
+            )
+            return cursor.fetchone()
+    except sqlite3.Error as e:
+        logger.error(f"Ошибка при получении команды для участника {user_id}: {e}")
+        return None
+
+
+def set_team_result(team_id: int, result: str) -> bool:
+    """Set result for a team"""
+    try:
+        with sqlite3.connect(DB_PATH, timeout=10) as conn:
+            cursor = conn.cursor()
+            cursor.execute(
+                "UPDATE teams SET result = ? WHERE team_id = ?",
+                (result, team_id)
+            )
+            success = cursor.rowcount > 0
+            conn.commit()
+            if success:
+                logger.info(f"Установлен результат {result} для команды team_id={team_id}")
+            return success
+    except sqlite3.Error as e:
+        logger.error(f"Ошибка при установке результата для команды {team_id}: {e}")
+        return False
+
+
+def delete_team(team_id: int) -> bool:
+    """Delete a team"""
+    try:
+        with sqlite3.connect(DB_PATH, timeout=10) as conn:
+            cursor = conn.cursor()
+            cursor.execute("DELETE FROM teams WHERE team_id = ?", (team_id,))
+            success = cursor.rowcount > 0
+            conn.commit()
+            if success:
+                logger.info(f"Команда team_id={team_id} удалена")
+            return success
+    except sqlite3.Error as e:
+        logger.error(f"Ошибка при удалении команды {team_id}: {e}")
+        return False
+
+
+def get_participants_with_team_category() -> list:
+    """Get all participants with category 'Команда' who are not yet in a team"""
+    try:
+        with sqlite3.connect(DB_PATH) as conn:
+            cursor = conn.cursor()
+            cursor.execute(
+                """
+                SELECT p.user_id, p.username, p.name, p.target_time, p.gender
+                FROM participants p
+                LEFT JOIN teams t ON p.user_id = t.member1_id OR p.user_id = t.member2_id
+                WHERE p.category = 'Команда' AND t.team_id IS NULL
+                ORDER BY p.name ASC
+                """
+            )
+            return cursor.fetchall()
+    except sqlite3.Error as e:
+        logger.error(f"Ошибка при получении участников с категорией 'Команда': {e}")
+        return []
+
+
+def clear_all_teams() -> bool:
+    """Clear all teams"""
+    try:
+        with sqlite3.connect(DB_PATH, timeout=10) as conn:
+            cursor = conn.cursor()
+            cursor.execute("DELETE FROM teams")
+            success = cursor.rowcount >= 0
+            conn.commit()
+            logger.info("Все команды удалены")
+            return success
+    except sqlite3.Error as e:
+        logger.error(f"Ошибка при очистке команд: {e}")
+        return False
