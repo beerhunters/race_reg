@@ -36,8 +36,8 @@ def register_cluster_handlers(dp: Dispatcher, bot: Bot, admin_id: int):
         await callback_query.answer()
 
         text = "🎯 <b>Управление кластерами и категориями</b>\n\n"
-        text += "📝 <b>Добавить категории</b> - назначить участникам категории (Элита, Классика, Женский, Команда)\n"
-        text += "🎯 <b>Распределить кластеры</b> - назначить участникам стартовые кластеры (A, B, C, D, E)\n"
+        text += "📝 <b>Добавить категории</b> - назначить участникам категории (СуперЭлита, Элита, Классика, Женский, Команда)\n"
+        text += "🎯 <b>Распределить кластеры</b> - назначить участникам стартовые кластеры (A, B, C, D, E, F, G)\n"
         text += "📋 <b>Посмотреть распределение</b> - показать финальное распределение всех участников\n"
         text += "🔄 <b>Сброс</b> - очистить категории или кластеры всех участников"
 
@@ -179,6 +179,7 @@ def register_cluster_handlers(dp: Dispatcher, bot: Bot, admin_id: int):
         # Get selected category
         category_data = callback_query.data.replace("category_", "")
         category_map = {
+            "superelite": "СуперЭлита",
             "elite": "Элита",
             "classic": "Классика",
             "women": "Женский",
@@ -267,6 +268,7 @@ def register_cluster_handlers(dp: Dispatcher, bot: Bot, admin_id: int):
 
             for category, count in sorted(category_counts.items()):
                 emoji = {
+                    "СуперЭлита": "💎",
                     "Элита": "🥇",
                     "Классика": "🏃",
                     "Женский": "👩",
@@ -287,6 +289,8 @@ def register_cluster_handlers(dp: Dispatcher, bot: Bot, admin_id: int):
                     "C": "🅲",
                     "D": "🅳",
                     "E": "🅴",
+                    "F": "🅵",
+                    "G": "🅶",
                     "Не назначен": "❓",
                 }.get(cluster, "🎯")
                 text += f"• {emoji} Кластер {cluster}: {count} чел.\n"
@@ -336,6 +340,7 @@ def register_cluster_handlers(dp: Dispatcher, bot: Bot, admin_id: int):
             if category != current_category:
                 current_category = category
                 category_emoji = {
+                    "СуперЭлита": "💎",
                     "Элита": "🥇",
                     "Классика": "🏃",
                     "Женский": "👩",
@@ -505,6 +510,7 @@ def register_cluster_handlers(dp: Dispatcher, bot: Bot, admin_id: int):
 
                 if category:
                     category_emoji = {
+                        "СуперЭлита": "💎",
                         "Элита": "🥇",
                         "Классика": "🏃",
                         "Женский": "👩",
@@ -521,6 +527,8 @@ def register_cluster_handlers(dp: Dispatcher, bot: Bot, admin_id: int):
                         "C": "🅲",
                         "D": "🅳",
                         "E": "🅴",
+                        "F": "🅵",
+                        "G": "🅶",
                     }.get(cluster, "🎯")
                     msg_text += f"🎯 <b>Ваш стартовый кластер:</b> {cluster_emoji} Кластер {cluster}\n"
 
@@ -605,6 +613,7 @@ def register_cluster_handlers(dp: Dispatcher, bot: Bot, admin_id: int):
 
             # Sort categories
             category_order = [
+                "СуперЭлита",
                 "Элита",
                 "Классика",
                 "Женский",
@@ -620,6 +629,7 @@ def register_cluster_handlers(dp: Dispatcher, bot: Bot, admin_id: int):
                     continue
 
                 category_emoji = {
+                    "СуперЭлита": "💎",
                     "Элита": "🥇",
                     "Классика": "🏃",
                     "Женский": "👩",
@@ -640,7 +650,7 @@ def register_cluster_handlers(dp: Dispatcher, bot: Bot, admin_id: int):
                         clusters[cluster].append(p)
 
                     # Sort clusters
-                    cluster_order = ["A", "B", "C", "D", "E", "Без кластера"]
+                    cluster_order = ["A", "B", "C", "D", "E", "F", "G", "Без кластера"]
                     for cluster_name in cluster_order:
                         if cluster_name not in clusters:
                             continue
@@ -655,6 +665,8 @@ def register_cluster_handlers(dp: Dispatcher, bot: Bot, admin_id: int):
                             "C": "🅲",
                             "D": "🅳",
                             "E": "🅴",
+                            "F": "🅵",
+                            "G": "🅶",
                             "Без кластера": "❓",
                         }.get(cluster_name, "🎯")
 
@@ -699,7 +711,7 @@ def register_cluster_handlers(dp: Dispatcher, bot: Bot, admin_id: int):
                     clusters[cluster] = []
                 clusters[cluster].append(participant)
 
-            cluster_order = ["A", "B", "C", "D", "E", "Без кластера"]
+            cluster_order = ["A", "B", "C", "D", "E", "F", "G", "Без кластера"]
             for cluster_name in cluster_order:
                 if cluster_name not in clusters:
                     continue
@@ -714,6 +726,8 @@ def register_cluster_handlers(dp: Dispatcher, bot: Bot, admin_id: int):
                     "C": "🅲",
                     "D": "🅳",
                     "E": "🅴",
+                    "F": "🅵",
+                    "G": "🅶",
                     "Без кластера": "❓",
                 }.get(cluster_name, "🎯")
 

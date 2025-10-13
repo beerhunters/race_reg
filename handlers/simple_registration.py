@@ -165,6 +165,7 @@ async def handle_start_command(message: Message, state: FSMContext, bot: Bot, ad
         # Категория с эмодзи
         if participant[10]:
             category_emoji = {
+                "СуперЭлита": "💎",
                 "Элита": "🥇",
                 "Классика": "🏃", 
                 "Женский": "👩",
@@ -177,7 +178,7 @@ async def handle_start_command(message: Message, state: FSMContext, bot: Bot, ad
         # Кластер с эмодзи
         if participant[11]:
             cluster_emoji = {
-                "A": "🅰️", "B": "🅱️", "C": "🅲", "D": "🅳", "E": "🅴"
+                "A": "🅰️", "B": "🅱️", "C": "🅲", "D": "🅳", "E": "🅴", "F": "🅵", "G": "🅶"
             }.get(participant[11], "🎯")
             cluster = f"{cluster_emoji} {participant[11]}"
         else:
@@ -294,18 +295,53 @@ async def handle_start_command(message: Message, state: FSMContext, bot: Bot, ad
 
 async def handle_start_registration(callback: CallbackQuery, state: FSMContext):
     """Обработчик начала процесса регистрации"""
-    try:
-        # Try to edit as text message first
-        await callback.message.edit_text("📝 Введите ваше полное имя:")
-    except Exception:
-        # If it fails, it might be a photo message, try editing caption
+    user_id = callback.from_user.id
+
+    # Проверяем, есть ли у пользователя история участия
+    from database import get_latest_user_result
+    latest_result = get_latest_user_result(user_id)
+
+    if latest_result and latest_result.get('name'):
+        # Пользователь уже участвовал ранее, используем его имя
+        name = latest_result.get('name')
+        await state.update_data(name=name, role="runner")
+
         try:
-            await callback.message.edit_caption(caption="📝 Введите ваше полное имя:")
+            # Try to edit as text message first
+            await callback.message.edit_text(
+                f"👋 Рады видеть вас снова, {name}!\n\n"
+                f"⏰ Введите ваше целевое время прохождения трассы (например, '5:30' или '1:05:30'):"
+            )
         except Exception:
-            # If both fail, send a new message
-            await callback.message.answer("📝 Введите ваше полное имя:")
-    
-    await state.set_state(RegistrationForm.waiting_for_name)
+            # If it fails, it might be a photo message, try editing caption
+            try:
+                await callback.message.edit_caption(
+                    caption=f"👋 Рады видеть вас снова, {name}!\n\n"
+                    f"⏰ Введите ваше целевое время прохождения трассы (например, '5:30' или '1:05:30'):"
+                )
+            except Exception:
+                # If both fail, send a new message
+                await callback.message.answer(
+                    f"👋 Рады видеть вас снова, {name}!\n\n"
+                    f"⏰ Введите ваше целевое время прохождения трассы (например, '5:30' или '1:05:30'):"
+                )
+
+        await state.set_state(RegistrationForm.waiting_for_target_time)
+    else:
+        # Новый пользователь, запрашиваем имя
+        try:
+            # Try to edit as text message first
+            await callback.message.edit_text("📝 Введите ваше полное имя:")
+        except Exception:
+            # If it fails, it might be a photo message, try editing caption
+            try:
+                await callback.message.edit_caption(caption="📝 Введите ваше полное имя:")
+            except Exception:
+                # If both fail, send a new message
+                await callback.message.answer("📝 Введите ваше полное имя:")
+
+        await state.set_state(RegistrationForm.waiting_for_name)
+
     await callback.answer()
 
 

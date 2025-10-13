@@ -517,16 +517,17 @@ def create_category_selection_keyboard():
     keyboard = InlineKeyboardMarkup(
         inline_keyboard=[
             [
+                InlineKeyboardButton(text="💎 СуперЭлита", callback_data="category_superelite"),
                 InlineKeyboardButton(text="🥇 Элита", callback_data="category_elite"),
+            ],
+            [
                 InlineKeyboardButton(
                     text="🏃 Классика", callback_data="category_classic"
                 ),
-            ],
-            [
                 InlineKeyboardButton(text="👩 Женский", callback_data="category_women"),
-                InlineKeyboardButton(text="👥 Команда", callback_data="category_team"),
             ],
             [
+                InlineKeyboardButton(text="👥 Команда", callback_data="category_team"),
                 InlineKeyboardButton(
                     text="⏭️ Пропустить", callback_data="category_skip"
                 ),
@@ -548,8 +549,10 @@ def create_cluster_selection_keyboard():
             [
                 InlineKeyboardButton(text="🅳 Кластер D", callback_data="cluster_D"),
                 InlineKeyboardButton(text="🅴 Кластер E", callback_data="cluster_E"),
+                InlineKeyboardButton(text="🅵 Кластер F", callback_data="cluster_F"),
             ],
             [
+                InlineKeyboardButton(text="🅶 Кластер G", callback_data="cluster_G"),
                 InlineKeyboardButton(text="⏭️ Пропустить", callback_data="cluster_skip"),
             ],
         ]

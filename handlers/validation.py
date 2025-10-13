@@ -15,37 +15,65 @@ class ValidationError(Exception):
 def validate_name(name: str) -> Tuple[bool, Optional[str]]:
     """
     Validate participant name with comprehensive checks.
-    
+    Supports letters, numbers, spaces, hyphens, apostrophes, and emojis.
+    Name must start with at least 2 letters, then emojis are allowed.
+
     Returns:
         Tuple[bool, Optional[str]]: (is_valid, error_message)
     """
     if not name:
         return False, "Имя не может быть пустым."
-    
+
     name = name.strip()
-    
+
     if len(name) < 2:
         return False, "Имя должно содержать минимум 2 символа."
-    
+
     if len(name) > 50:
         return False, "Имя не может быть длиннее 50 символов."
-    
-    # Allow letters (including Cyrillic), numbers, spaces, hyphens, and apostrophes
-    pattern = r'^[a-zA-Zа-яА-ЯёЁ0-9\s\-\'\.]+$'
-    if not re.match(pattern, name):
-        return False, "Имя может содержать только буквы, цифры, пробелы, дефисы и апострофы."
-    
+
+    # Check that name starts with at least 2 letters (or 1 letter + space + letter)
+    letter_pattern = r'^[a-zA-Zа-яА-ЯёЁ]{2,}|^[a-zA-Zа-яА-ЯёЁ]\s+[a-zA-Zа-яА-ЯёЁ]'
+    if not re.match(letter_pattern, name):
+        return False, "Имя должно начинаться минимум с 2 букв."
+
+    # Check if name contains only allowed characters:
+    # - Letters (Cyrillic and Latin)
+    # - Numbers
+    # - Spaces, hyphens, apostrophes, dots
+    # - Emojis (most common Unicode ranges)
+    def is_emoji(char):
+        """Check if character is an emoji"""
+        code = ord(char)
+        # Common emoji ranges in Unicode
+        return (
+            0x1F300 <= code <= 0x1F9FF or  # Miscellaneous Symbols and Pictographs, Emoticons, etc.
+            0x2600 <= code <= 0x27BF or    # Miscellaneous Symbols
+            0x1F600 <= code <= 0x1F64F or  # Emoticons
+            0x1F680 <= code <= 0x1F6FF or  # Transport and Map Symbols
+            0x1F1E0 <= code <= 0x1F1FF     # Regional Indicator Symbols (flags)
+        )
+
+    # Validate each character
+    for char in name:
+        if not (char.isalpha() or char.isdigit() or char in ' -\'.' or is_emoji(char)):
+            return False, "Имя может содержать только буквы, цифры, пробелы, дефисы, апострофы и эмодзи."
+
     # Check for excessive consecutive spaces or special characters
     if re.search(r'\s{3,}', name):
         return False, "Имя не может содержать более двух пробелов подряд."
-    
+
     if re.search(r'[-\'\.]{2,}', name):
         return False, "Специальные символы не могут повторяться."
-    
-    # Name shouldn't start or end with special characters
-    if re.match(r'^[-\'\.\s]', name) or re.search(r'[-\'\.\s]$', name):
-        return False, "Имя не может начинаться или заканчиваться специальными символами или пробелами."
-    
+
+    # Name shouldn't start or end with special characters (but emojis at the end are OK)
+    if re.match(r'^[-\'\.\s]', name):
+        return False, "Имя не может начинаться со специальных символов или пробелов."
+
+    # Name shouldn't end with spaces or special chars (excluding emojis)
+    if re.search(r'[-\'\.\s]$', name):
+        return False, "Имя не может заканчиваться специальными символами или пробелами."
+
     return True, None
 
 

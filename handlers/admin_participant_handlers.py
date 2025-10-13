@@ -244,7 +244,8 @@ def register_admin_participant_handlers(dp: Dispatcher, bot: Bot, admin_id: int)
             category_info = ""
             if category:
                 category_emoji = {
-                    "Элита": "🥇",
+                    "СуперЭлита": "💎",
+                "Элита": "🥇",
                     "Классика": "🏃",
                     "Женский": "👩",
                     "Команда": "👥",
@@ -253,7 +254,7 @@ def register_admin_participant_handlers(dp: Dispatcher, bot: Bot, admin_id: int)
 
             cluster_info = ""
             if cluster:
-                cluster_emoji = {"A": "🅰️", "B": "🅱️", "C": "🅲", "D": "🅳", "E": "🅴"}.get(
+                cluster_emoji = {"A": "🅰️", "B": "🅱️", "C": "🅲", "D": "🅳", "E": "🅴", "F": "🅵", "G": "🅶"}.get(
                     cluster, "🎯"
                 )
                 cluster_info += f"🎯 Кластер: {cluster_emoji} {cluster}\n"
@@ -2805,6 +2806,7 @@ def register_admin_participant_handlers(dp: Dispatcher, bot: Bot, admin_id: int)
             text += f"👤 Пол: {gender}\n"
         if category:
             category_emoji = {
+                "СуперЭлита": "💎",
                 "Элита": "🥇",
                 "Классика": "🏃",
                 "Женский": "👩",
@@ -2812,7 +2814,7 @@ def register_admin_participant_handlers(dp: Dispatcher, bot: Bot, admin_id: int)
             }.get(category, "📂")
             text += f"📂 Категория: {category_emoji} {category}\n"
         if cluster:
-            cluster_emoji = {"A": "🅰️", "B": "🅱️", "C": "🅲", "D": "🅳", "E": "🅴"}.get(
+            cluster_emoji = {"A": "🅰️", "B": "🅱️", "C": "🅲", "D": "🅳", "E": "🅴", "F": "🅵", "G": "🅶"}.get(
                 cluster, "🎯"
             )
             text += f"🎯 Кластер: {cluster_emoji} {cluster}\n"
@@ -3046,7 +3048,8 @@ def register_admin_participant_handlers(dp: Dispatcher, bot: Bot, admin_id: int)
                     # Add category/cluster info if available
                     if category:
                         category_emoji = {
-                            "Элита": "🥇",
+                            "СуперЭлита": "💎",
+                "Элита": "🥇",
                             "Классика": "🏃",
                             "Женский": "👩",
                             "Команда": "👥",
@@ -3055,11 +3058,7 @@ def register_admin_participant_handlers(dp: Dispatcher, bot: Bot, admin_id: int)
 
                     if cluster:
                         cluster_emoji = {
-                            "A": "🅰️",
-                            "B": "🅱️",
-                            "C": "🅲",
-                            "D": "🅳",
-                            "E": "🅴",
+                            "A": "🅰️", "B": "🅱️", "C": "🅲", "D": "🅳", "E": "🅴", "F": "🅵", "G": "🅶",
                         }.get(cluster, "🎯")
                         msg_text += f"🎯 Стартовый кластер: {cluster_emoji} {cluster}\n"
 
@@ -3153,7 +3152,8 @@ def register_admin_participant_handlers(dp: Dispatcher, bot: Bot, admin_id: int)
                     continue
 
                 category_emoji = {
-                    "Элита": "🥇",
+                    "СуперЭлита": "💎",
+                "Элита": "🥇",
                     "Классика": "🏃",
                     "Женский": "👩",
                     "Команда": "👥",

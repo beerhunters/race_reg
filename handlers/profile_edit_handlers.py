@@ -58,7 +58,8 @@ async def handle_edit_profile_command(message: Message, state: FSMContext):
     # Категория с эмодзи
     if participant[10]:
         category_emoji = {
-            "Элита": "🥇",
+            "СуперЭлита": "💎",
+                "Элита": "🥇",
             "Классика": "🏃", 
             "Женский": "👩",
             "Команда": "👥"
@@ -70,7 +71,7 @@ async def handle_edit_profile_command(message: Message, state: FSMContext):
     # Кластер с эмодзи
     if participant[11]:
         cluster_emoji = {
-            "A": "🅰️", "B": "🅱️", "C": "🅲", "D": "🅳", "E": "🅴"
+            "A": "🅰️", "B": "🅱️", "C": "🅲", "D": "🅳", "E": "🅴", "F": "🅵", "G": "🅶"
         }.get(participant[11], "🎯")
         cluster = f"{cluster_emoji} {participant[11]}"
     else:
