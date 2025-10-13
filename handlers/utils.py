@@ -323,6 +323,9 @@ def create_notifications_category_keyboard():
         InlineKeyboardButton(
             text="💰 Напомнить об оплате", callback_data="admin_notify_unpaid"
         ),
+        InlineKeyboardButton(
+            text="✅ Запрос подтверждения участия", callback_data="admin_request_confirmation"
+        ),
         InlineKeyboardButton(text="🏠 Главное меню", callback_data="main_menu"),
     ]
     return InlineKeyboardMarkup(inline_keyboard=[[cmd] for cmd in commands])
@@ -607,6 +610,23 @@ def create_back_keyboard(callback_data: str = "back"):
         inline_keyboard=[
             [
                 InlineKeyboardButton(text="⬅️ Назад", callback_data=callback_data),
+            ],
+        ]
+    )
+    return keyboard
+
+
+def create_participation_confirmation_keyboard(user_id: int):
+    """Create keyboard for participation confirmation request"""
+    keyboard = InlineKeyboardMarkup(
+        inline_keyboard=[
+            [
+                InlineKeyboardButton(
+                    text="✅ Да, подтверждаю", callback_data=f"confirm_participation_yes_{user_id}"
+                ),
+                InlineKeyboardButton(
+                    text="❌ Нет, отказываюсь", callback_data=f"confirm_participation_no_{user_id}"
+                ),
             ],
         ]
     )

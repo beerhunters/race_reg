@@ -878,3 +878,210 @@ def register_notification_handlers(dp: Dispatcher, bot: Bot, admin_id: int):
         message: Message, state: FSMContext
     ):
         await process_notify_all_interacted_invalid(message, state)
+
+    # Request participation confirmation handler
+    @dp.callback_query(F.data == "admin_request_confirmation")
+    async def request_participation_confirmation(callback: CallbackQuery):
+        """Send participation confirmation request to unpaid participants"""
+        user_id = callback.from_user.id
+        if user_id != admin_id:
+            await callback.answer("❌ Доступ запрещен")
+            return
+        
+        logger.info(f"Запрос подтверждения участия от admin_id={user_id}")
+        
+        await callback.message.delete()
+        await callback.answer()
+        
+        # Get unpaid participants
+        try:
+            with sqlite3.connect("/app/data/race_participants.db", timeout=10) as conn:
+                cursor = conn.cursor()
+                cursor.execute(
+                    "SELECT user_id, username, name FROM participants "
+                    "WHERE payment_status = 'pending' AND role = 'runner'"
+                )
+                unpaid_participants = cursor.fetchall()
+        except sqlite3.Error as e:
+            logger.error(f"Ошибка при получении списка неоплативших участников: {e}")
+            await callback.message.answer(
+                "❌ Ошибка при получении списка участников. Попробуйте снова."
+            )
+            return
+        
+        if not unpaid_participants:
+            logger.info("Нет неоплативших участников для запроса подтверждения")
+            await callback.message.answer(
+                "ℹ️ Нет неоплативших участников для запроса подтверждения."
+            )
+            return
+        
+        # Send confirmation requests
+        success_count = 0
+        failed_count = 0
+        
+        status_msg = await callback.message.answer(
+            f"📤 Отправка запросов подтверждения...\n"
+            f"👥 Получателей: {len(unpaid_participants)}"
+        )
+        
+        from .utils import create_participation_confirmation_keyboard
+        
+        for user_id_p, username, name in unpaid_participants:
+            try:
+                confirmation_text = (
+                    f"✅ <b>Подтверждение участия</b>\n\n"
+                    f"Здравствуйте, <b>{name}</b>!\n\n"
+                    f"Мы хотим уточнить ваше участие в мероприятии.\n"
+                    f"Пожалуйста, подтвердите, планируете ли вы принять участие?\n\n"
+                    f"💡 Если вы не уверены или изменились ваши планы, сообщите нам."
+                )
+                
+                keyboard = create_participation_confirmation_keyboard(user_id_p)
+                
+                await bot.send_message(
+                    chat_id=user_id_p,
+                    text=confirmation_text,
+                    parse_mode="HTML",
+                    reply_markup=keyboard
+                )
+                
+                success_count += 1
+                logger.info(f"Запрос подтверждения отправлен участнику {name} (ID: {user_id_p})")
+                
+            except TelegramForbiddenError:
+                logger.warning(f"Пользователь {name} (ID: {user_id_p}) заблокировал бот")
+                failed_count += 1
+                cleanup_blocked_user(user_id_p)
+            except Exception as e:
+                logger.error(f"Ошибка отправки запроса участнику {name} (ID: {user_id_p}): {e}")
+                failed_count += 1
+        
+        # Send result summary
+        result_text = (
+            f"✅ <b>Запросы подтверждения отправлены</b>\n\n"
+            f"📊 <b>Статистика:</b>\n"
+            f"• Успешно: {success_count}\n"
+            f"• Не доставлено: {failed_count}\n"
+            f"• Всего: {len(unpaid_participants)}\n\n"
+            f"💡 Участники получат уведомление с кнопками \"Да\" и \"Нет\".\n"
+            f"Вы получите уведомление об их ответах."
+        )
+        
+        await callback.message.answer(result_text, parse_mode="HTML")
+        logger.info(f"Запросы подтверждения отправлены: {success_count}/{len(unpaid_participants)}")
+    
+    # Handle YES confirmation
+    @dp.callback_query(F.data.startswith("confirm_participation_yes_"))
+    async def handle_confirmation_yes(callback: CallbackQuery):
+        """Handle YES confirmation from participant"""
+        try:
+            user_id = int(callback.data.replace("confirm_participation_yes_", ""))
+        except ValueError:
+            await callback.answer("❌ Ошибка обработки")
+            return
+        
+        # Get participant info
+        participant = get_participant_by_user_id(user_id)
+        if not participant:
+            await callback.answer("❌ Участник не найден")
+            return
+        
+        name = participant[2]
+        username = participant[1] or "не указан"
+        
+        # Update message for user
+        await callback.message.edit_text(
+            f"✅ <b>Спасибо за подтверждение!</b>\n\n"
+            f"Мы ждем вас на мероприятии, <b>{name}</b>!\n\n"
+            f"💡 Не забудьте произвести оплату участия {get_participation_fee_text()}",
+            parse_mode="HTML"
+        )
+        
+        # Notify admin
+        admin_text = (
+            f"✅ <b>Подтверждение участия получено</b>\n\n"
+            f"👤 <b>Участник:</b> {name}\n"
+            f"🆔 <b>ID:</b> <code>{user_id}</code>\n"
+            f"📱 <b>Username:</b> @{username}\n\n"
+            f"Участник подтвердил свое участие в мероприятии."
+        )
+        
+        try:
+            await bot.send_message(admin_id, admin_text, parse_mode="HTML")
+            logger.info(f"Участник {name} (ID: {user_id}) подтвердил участие")
+        except Exception as e:
+            logger.error(f"Ошибка отправки уведомления админу: {e}")
+        
+        await callback.answer("✅ Подтверждение отправлено")
+    
+    # Handle NO confirmation
+    @dp.callback_query(F.data.startswith("confirm_participation_no_"))
+    async def handle_confirmation_no(callback: CallbackQuery):
+        """Handle NO confirmation from participant - remove from participants, add to pending"""
+        try:
+            user_id = int(callback.data.replace("confirm_participation_no_", ""))
+        except ValueError:
+            await callback.answer("❌ Ошибка обработки")
+            return
+        
+        # Get participant info before deletion
+        participant = get_participant_by_user_id(user_id)
+        if not participant:
+            await callback.answer("❌ Участник не найден")
+            return
+        
+        username = participant[1] or "не указан"
+        name = participant[2]
+        target_time = participant[3]
+        role = participant[4]
+        
+        # Delete from participants
+        success_delete = delete_participant(user_id)
+        
+        if not success_delete:
+            await callback.answer("❌ Ошибка при обработке отказа")
+            logger.error(f"Не удалось удалить участника {name} (ID: {user_id})")
+            return
+        
+        # Add to pending registrations
+        from database import add_pending_registration
+        success_pending = add_pending_registration(
+            user_id=user_id,
+            username=username,
+            name=name,
+            target_time=target_time,
+            role=role
+        )
+        
+        if not success_pending:
+            logger.warning(f"Не удалось добавить {name} (ID: {user_id}) в pending после отказа")
+        
+        # Update message for user
+        await callback.message.edit_text(
+            f"📝 <b>Спасибо за ответ</b>\n\n"
+            f"Жаль, что вы не сможете принять участие, <b>{name}</b>.\n\n"
+            f"💡 Если ваши планы изменятся, вы всегда можете зарегистрироваться снова командой /start",
+            parse_mode="HTML"
+        )
+        
+        # Notify admin
+        admin_text = (
+            f"❌ <b>Отказ от участия</b>\n\n"
+            f"👤 <b>Участник:</b> {name}\n"
+            f"🆔 <b>ID:</b> <code>{user_id}</code>\n"
+            f"📱 <b>Username:</b> @{username}\n\n"
+            f"⚠️ Участник отказался от участия.\n"
+            f"✅ Удален из списка участников\n"
+            f"📝 Добавлен в незавершенные регистрации"
+        )
+        
+        try:
+            await bot.send_message(admin_id, admin_text, parse_mode="HTML")
+            logger.info(f"Участник {name} (ID: {user_id}) отказался от участия и удален")
+        except Exception as e:
+            logger.error(f"Ошибка отправки уведомления админу: {e}")
+        
+        await callback.answer("✅ Отказ обработан")
+
+    logger.info("Обработчики уведомлений зарегистрированы")
