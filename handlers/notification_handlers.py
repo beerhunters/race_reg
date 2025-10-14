@@ -1018,32 +1018,59 @@ def register_notification_handlers(dp: Dispatcher, bot: Bot, admin_id: int):
     # Handle NO confirmation
     @dp.callback_query(F.data.startswith("confirm_participation_no_"))
     async def handle_confirmation_no(callback: CallbackQuery):
-        """Handle NO confirmation from participant - remove from participants, add to pending"""
+        """Handle NO confirmation from participant - remove from participants, add to pending, decrease limit"""
         try:
             user_id = int(callback.data.replace("confirm_participation_no_", ""))
         except ValueError:
             await callback.answer("❌ Ошибка обработки")
             return
-        
+
         # Get participant info before deletion
         participant = get_participant_by_user_id(user_id)
         if not participant:
             await callback.answer("❌ Участник не найден")
             return
-        
+
         username = participant[1] or "не указан"
         name = participant[2]
         target_time = participant[3]
         role = participant[4]
-        
+
         # Delete from participants
         success_delete = delete_participant(user_id)
-        
+
         if not success_delete:
             await callback.answer("❌ Ошибка при обработке отказа")
             logger.error(f"Не удалось удалить участника {name} (ID: {user_id})")
             return
-        
+
+        # Decrease participant limit
+        from database import get_setting, set_setting, get_participant_count_by_role
+        try:
+            current_limit = get_setting(f"max_{role}s")
+            if current_limit is None:
+                current_limit = 0
+            else:
+                try:
+                    current_limit = int(current_limit)
+                except (ValueError, TypeError):
+                    current_limit = 0
+
+            # Get current count after deletion
+            current_count = get_participant_count_by_role(role)
+
+            # Decrease limit by 1, but not below current count
+            new_limit = max(current_limit - 1, current_count)
+
+            if new_limit != current_limit:
+                success_limit = set_setting(f"max_{role}s", new_limit)
+                if success_limit:
+                    logger.info(f"Лимит {role}s уменьшен с {current_limit} до {new_limit} после отказа участника {name}")
+                else:
+                    logger.warning(f"Не удалось уменьшить лимит {role}s")
+        except Exception as e:
+            logger.error(f"Ошибка при уменьшении лимита после отказа: {e}")
+
         # Add to pending registrations
         from database import add_pending_registration
         success_pending = add_pending_registration(
@@ -1053,10 +1080,10 @@ def register_notification_handlers(dp: Dispatcher, bot: Bot, admin_id: int):
             target_time=target_time,
             role=role
         )
-        
+
         if not success_pending:
             logger.warning(f"Не удалось добавить {name} (ID: {user_id}) в pending после отказа")
-        
+
         # Update message for user
         await callback.message.edit_text(
             f"📝 <b>Спасибо за ответ</b>\n\n"
@@ -1064,7 +1091,7 @@ def register_notification_handlers(dp: Dispatcher, bot: Bot, admin_id: int):
             f"💡 Если ваши планы изменятся, вы всегда можете зарегистрироваться снова командой /start",
             parse_mode="HTML"
         )
-        
+
         # Notify admin
         admin_text = (
             f"❌ <b>Отказ от участия</b>\n\n"
@@ -1073,15 +1100,16 @@ def register_notification_handlers(dp: Dispatcher, bot: Bot, admin_id: int):
             f"📱 <b>Username:</b> @{username}\n\n"
             f"⚠️ Участник отказался от участия.\n"
             f"✅ Удален из списка участников\n"
+            f"📉 Лимит участников уменьшен\n"
             f"📝 Добавлен в незавершенные регистрации"
         )
-        
+
         try:
             await bot.send_message(admin_id, admin_text, parse_mode="HTML")
             logger.info(f"Участник {name} (ID: {user_id}) отказался от участия и удален")
         except Exception as e:
             logger.error(f"Ошибка отправки уведомления админу: {e}")
-        
+
         await callback.answer("✅ Отказ обработан")
 
     logger.info("Обработчики уведомлений зарегистрированы")
