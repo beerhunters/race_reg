@@ -94,6 +94,9 @@ class RegistrationForm(StatesGroup):
     selecting_team_member2 = State()
     waiting_for_team_result = State()
 
+    # Personal confirmation request states
+    selecting_participant_for_confirmation = State()
+
     processed = State()
 
 
@@ -333,6 +336,9 @@ def create_notifications_category_keyboard():
         ),
         InlineKeyboardButton(
             text="✅ Запрос подтверждения участия", callback_data="admin_request_confirmation"
+        ),
+        InlineKeyboardButton(
+            text="👤 Запрос подтверждения лично", callback_data="admin_request_personal_confirmation"
         ),
         InlineKeyboardButton(text="🏠 Главное меню", callback_data="main_menu"),
     ]

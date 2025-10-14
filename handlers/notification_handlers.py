@@ -1112,4 +1112,152 @@ def register_notification_handlers(dp: Dispatcher, bot: Bot, admin_id: int):
 
         await callback.answer("✅ Отказ обработан")
 
+    # Personal confirmation request handler
+    @dp.callback_query(F.data == "admin_request_personal_confirmation")
+    async def request_personal_confirmation(callback: CallbackQuery, state: FSMContext):
+        """Show list of unpaid participants to select one for confirmation request"""
+        user_id = callback.from_user.id
+        if user_id != admin_id:
+            await callback.answer("❌ Доступ запрещен")
+            return
+
+        logger.info(f"Запрос персонального подтверждения от admin_id={user_id}")
+
+        # Get unpaid participants
+        try:
+            with sqlite3.connect("/app/data/race_participants.db", timeout=10) as conn:
+                cursor = conn.cursor()
+                cursor.execute(
+                    "SELECT user_id, username, name FROM participants "
+                    "WHERE payment_status = 'pending' AND role = 'runner' "
+                    "ORDER BY name"
+                )
+                unpaid_participants = cursor.fetchall()
+        except sqlite3.Error as e:
+            logger.error(f"Ошибка при получении списка неоплативших участников: {e}")
+            await callback.message.edit_text(
+                "❌ Ошибка при получении списка участников. Попробуйте снова.",
+                parse_mode="HTML"
+            )
+            await callback.answer()
+            return
+
+        if not unpaid_participants:
+            logger.info("Нет неоплативших участников для персонального запроса подтверждения")
+            await callback.message.edit_text(
+                "ℹ️ Нет неоплативших участников для запроса подтверждения.",
+                parse_mode="HTML"
+            )
+            await callback.answer()
+            return
+
+        # Create keyboard with participants
+        buttons = []
+        for participant_user_id, username, name in unpaid_participants:
+            display_name = f"{name} (@{username or 'без username'})"
+            buttons.append([InlineKeyboardButton(
+                text=display_name,
+                callback_data=f"personal_confirm_{participant_user_id}"
+            )])
+
+        buttons.append([InlineKeyboardButton(text="❌ Отмена", callback_data="cancel_personal_confirmation")])
+
+        keyboard = InlineKeyboardMarkup(inline_keyboard=buttons)
+
+        text = f"👤 <b>Запрос подтверждения лично</b>\n\n"
+        text += f"Выберите участника для отправки запроса подтверждения:\n\n"
+        text += f"📊 Всего неоплативших: {len(unpaid_participants)}"
+
+        await callback.message.edit_text(text, reply_markup=keyboard, parse_mode="HTML")
+        await state.set_state(RegistrationForm.selecting_participant_for_confirmation)
+        await callback.answer()
+
+    @dp.callback_query(F.data.startswith("personal_confirm_"), RegistrationForm.selecting_participant_for_confirmation)
+    async def send_personal_confirmation(callback: CallbackQuery, state: FSMContext):
+        """Send confirmation request to selected participant"""
+        if callback.from_user.id != admin_id:
+            await callback.answer("❌ Доступ запрещен")
+            return
+
+        try:
+            participant_user_id = int(callback.data.replace("personal_confirm_", ""))
+        except ValueError:
+            await callback.answer("❌ Ошибка обработки")
+            return
+
+        # Get participant info
+        participant = get_participant_by_user_id(participant_user_id)
+        if not participant:
+            await callback.message.edit_text("❌ Участник не найден.", parse_mode="HTML")
+            await callback.answer()
+            await state.clear()
+            return
+
+        name = participant[2]
+        username = participant[1] or "не указан"
+
+        # Send confirmation request
+        from .utils import create_participation_confirmation_keyboard
+
+        confirmation_text = (
+            f"✅ <b>Подтверждение участия</b>\n\n"
+            f"Здравствуйте, <b>{name}</b>!\n\n"
+            f"Мы хотим уточнить ваше участие в мероприятии.\n"
+            f"Пожалуйста, подтвердите, планируете ли вы принять участие?\n\n"
+            f"💡 Если вы не уверены или изменились ваши планы, сообщите нам."
+        )
+
+        keyboard = create_participation_confirmation_keyboard(participant_user_id)
+
+        try:
+            await bot.send_message(
+                chat_id=participant_user_id,
+                text=confirmation_text,
+                parse_mode="HTML",
+                reply_markup=keyboard
+            )
+
+            # Notify admin
+            await callback.message.edit_text(
+                f"✅ <b>Запрос отправлен</b>\n\n"
+                f"👤 <b>Участник:</b> {name}\n"
+                f"🆔 <b>ID:</b> <code>{participant_user_id}</code>\n"
+                f"📱 <b>Username:</b> @{username}\n\n"
+                f"Запрос подтверждения участия отправлен.\n"
+                f"Вы получите уведомление о его ответе.",
+                parse_mode="HTML"
+            )
+
+            logger.info(f"Персональный запрос подтверждения отправлен участнику {name} (ID: {participant_user_id})")
+
+        except TelegramForbiddenError:
+            logger.warning(f"Пользователь {name} (ID: {participant_user_id}) заблокировал бот")
+            await callback.message.edit_text(
+                f"❌ <b>Ошибка отправки</b>\n\n"
+                f"👤 <b>Участник:</b> {name}\n"
+                f"🆔 <b>ID:</b> <code>{participant_user_id}</code>\n\n"
+                f"Пользователь заблокировал бота.",
+                parse_mode="HTML"
+            )
+            cleanup_blocked_user(participant_user_id)
+        except Exception as e:
+            logger.error(f"Ошибка отправки запроса участнику {name} (ID: {participant_user_id}): {e}")
+            await callback.message.edit_text(
+                f"❌ <b>Ошибка отправки</b>\n\n"
+                f"👤 <b>Участник:</b> {name}\n"
+                f"🆔 <b>ID:</b> <code>{participant_user_id}</code>\n\n"
+                f"Произошла ошибка при отправке запроса.",
+                parse_mode="HTML"
+            )
+
+        await callback.answer()
+        await state.clear()
+
+    @dp.callback_query(F.data == "cancel_personal_confirmation")
+    async def cancel_personal_confirmation(callback: CallbackQuery, state: FSMContext):
+        """Cancel personal confirmation request"""
+        await callback.message.edit_text("❌ Отправка запроса отменена.", parse_mode="HTML")
+        await state.clear()
+        await callback.answer()
+
     logger.info("Обработчики уведомлений зарегистрированы")
