@@ -2058,3 +2058,108 @@ def clear_all_teams() -> bool:
     except sqlite3.Error as e:
         logger.error(f"Ошибка при очистке команд: {e}")
         return False
+
+
+# ============================================================================
+# CANCEL PARTICIPATION FUNCTIONS
+# ============================================================================
+
+
+def cancel_user_participation(user_id: int) -> dict:
+    """
+    Cancel user participation: remove from participants/waitlist, add to pending, decrease limit
+    Returns dict with success status and details
+    """
+    try:
+        with sqlite3.connect(DB_PATH, timeout=10) as conn:
+            cursor = conn.cursor()
+
+            # Check if user is in participants
+            cursor.execute(
+                """
+                SELECT username, name, target_time, role, gender
+                FROM participants WHERE user_id = ?
+                """,
+                (user_id,)
+            )
+            participant_data = cursor.fetchone()
+
+            # Check if user is in waitlist
+            cursor.execute(
+                """
+                SELECT username, name, target_time, role, gender
+                FROM waitlist WHERE user_id = ?
+                """,
+                (user_id,)
+            )
+            waitlist_data = cursor.fetchone()
+
+            if not participant_data and not waitlist_data:
+                return {"success": False, "error": "Пользователь не найден ни в участниках, ни в очереди ожидания"}
+
+            # Determine where user is located
+            if participant_data:
+                username, name, target_time, role, gender = participant_data
+                source = "participants"
+
+                # Get current limit for this role
+                current_limit = get_setting(f"max_{role}s")  # max_runners or max_volunteers
+
+                if current_limit is None:
+                    current_limit = 0
+                else:
+                    try:
+                        current_limit = int(current_limit)
+                    except (ValueError, TypeError):
+                        current_limit = 0
+
+                # Get current participant count
+                current_count = get_participant_count_by_role(role)
+
+                # Calculate new limit (decrease by 1, but not less than current_count - 1)
+                new_limit = max(current_count - 1, 0)
+
+                # Update the limit
+                if new_limit != current_limit:
+                    success = set_setting(f"max_{role}s", new_limit)
+                    if not success:
+                        return {"success": False, "error": "Ошибка при обновлении лимита"}
+                    logger.info(f"Лимит {role}s уменьшен с {current_limit} до {new_limit}")
+
+                # Remove from participants
+                cursor.execute("DELETE FROM participants WHERE user_id = ?", (user_id,))
+
+            else:  # waitlist_data
+                username, name, target_time, role, gender = waitlist_data
+                source = "waitlist"
+                current_limit = None
+                new_limit = None
+
+                # Remove from waitlist
+                cursor.execute("DELETE FROM waitlist WHERE user_id = ?", (user_id,))
+
+            # Add to pending_registrations
+            cursor.execute(
+                "INSERT OR REPLACE INTO pending_registrations (user_id, username, name, target_time, role) VALUES (?, ?, ?, ?, ?)",
+                (user_id, username, name, target_time, role)
+            )
+
+            conn.commit()
+
+            logger.info(f"Пользователь {name} (ID: {user_id}) отменил участие. "
+                       f"Удален из {source}, добавлен в pending_registrations. "
+                       f"Лимит: {current_limit} -> {new_limit if new_limit is not None else 'N/A'}")
+
+            return {
+                "success": True,
+                "user_name": name,
+                "user_id": user_id,
+                "role": role,
+                "source": source,
+                "old_limit": current_limit,
+                "new_limit": new_limit
+            }
+
+    except sqlite3.Error as e:
+        logger.error(f"Ошибка при отмене участия пользователя {user_id}: {e}")
+        return {"success": False, "error": f"Ошибка базы данных: {e}"}
