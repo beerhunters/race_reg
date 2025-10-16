@@ -54,6 +54,8 @@ from database import (
     promote_waitlist_user_by_id,
     get_waitlist_by_user_id,
     demote_participant_to_waitlist,
+    get_setting,
+    set_setting,
 )
 
 
@@ -863,9 +865,30 @@ def register_admin_participant_handlers(dp: Dispatcher, bot: Bot, admin_id: int)
 
         if participant:
             participant_role = participant[4]  # role is at index 4
+
+            # Get current participant count and limit for this role
+            current_count = get_participant_count_by_role(participant_role)
+            current_limit = get_setting(f"max_{participant_role}s")  # max_runners or max_volunteers
+
+            if current_limit is None:
+                current_limit = 0
+            else:
+                try:
+                    current_limit = int(current_limit)
+                except (ValueError, TypeError):
+                    current_limit = 0
+
             success = delete_participant(user_id)
 
             if success:
+                # Calculate new limit (current participants - 1, but not less than current_count - 1)
+                new_limit = max(current_count - 1, 0)
+
+                # Update the limit only if it changes
+                if new_limit != current_limit:
+                    set_setting(f"max_{participant_role}s", new_limit)
+                    logger.info(f"Лимит {participant_role}s уменьшен с {current_limit} до {new_limit}")
+
                 await message.answer(
                     messages["remove_success"].format(name=participant[2])
                 )
@@ -2716,8 +2739,7 @@ def register_admin_participant_handlers(dp: Dispatcher, bot: Bot, admin_id: int)
 
                 # Optionally remove blocked users
                 try:
-                    delete_participant(user_id_p)
-                    delete_pending_registration(user_id_p)
+                    cleanup_blocked_user(user_id_p)
                     logger.info(f"Участник {name} (ID: {user_id_p}) удален из БД")
 
                     # Notify admin about blocked user

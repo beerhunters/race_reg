@@ -1393,6 +1393,7 @@ def cleanup_blocked_user(user_id: int) -> bool:
     """
     Remove blocked user from all database tables
     This function should be called when TelegramForbiddenError occurs
+    Note: Does not decrease limit - blocked users are not considered active participants
     """
     try:
         with sqlite3.connect(DB_PATH, timeout=10) as conn:
@@ -1419,7 +1420,7 @@ def cleanup_blocked_user(user_id: int) -> bool:
             # Check if edit_requests table exists and clean it
             cursor.execute(
                 """
-                SELECT name FROM sqlite_master 
+                SELECT name FROM sqlite_master
                 WHERE type='table' AND name='edit_requests'
             """
             )
