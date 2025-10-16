@@ -1119,7 +1119,7 @@ def register_admin_participant_handlers(dp: Dispatcher, bot: Bot, admin_id: int)
             "⬆️ <b>Перевод из очереди ожидания</b>\n\n"
             "Введите ID пользователя, которого нужно перевести из очереди ожидания в участники:\n\n"
             "💡 ID можно найти в списке очереди ожидания (/waitlist)",
-            reply_markup=create_back_keyboard()
+            reply_markup=create_back_keyboard("category_participants")
         )
         await state.set_state(RegistrationForm.waiting_for_promote_id)
         await callback_query.answer()
@@ -1143,7 +1143,7 @@ def register_admin_participant_handlers(dp: Dispatcher, bot: Bot, admin_id: int)
             await message.answer(
                 f"❌ Пользователь с ID <code>{target_user_id}</code> не найден в очереди ожидания.\n\n"
                 "Проверьте ID в списке очереди ожидания (/waitlist).",
-                reply_markup=create_back_keyboard()
+                reply_markup=create_back_keyboard("category_participants")
             )
             return
 
@@ -1165,8 +1165,8 @@ def register_admin_participant_handlers(dp: Dispatcher, bot: Bot, admin_id: int)
                 f"Пользователь переведен из очереди ожидания в список участников. "
                 f"Лимит автоматически увеличен."
             )
-            await message.answer(success_message, reply_markup=create_back_keyboard())
-            
+            await message.answer(success_message, reply_markup=create_back_keyboard("category_participants"))
+
             # Notify the user
             try:
                 await bot.send_message(
@@ -1181,10 +1181,10 @@ def register_admin_participant_handlers(dp: Dispatcher, bot: Bot, admin_id: int)
                 logger.info(f"Уведомление о переводе отправлено пользователю {target_user_id}")
             except Exception as e:
                 logger.warning(f"Не удалось отправить уведомление пользователю {target_user_id}: {e}")
-                
+
         else:
             error_message = f"❌ <b>Ошибка при переводе пользователя:</b>\n\n{result['error']}"
-            await message.answer(error_message, reply_markup=create_back_keyboard())
+            await message.answer(error_message, reply_markup=create_back_keyboard("category_participants"))
 
         await state.clear()
 
@@ -1198,7 +1198,7 @@ def register_admin_participant_handlers(dp: Dispatcher, bot: Bot, admin_id: int)
             "⬇️ <b>Перевод в очередь ожидания</b>\n\n"
             "Введите ID участника, которого нужно перевести в очередь ожидания:\n\n"
             "💡 ID можно найти в списке участников (/participants)",
-            reply_markup=create_back_keyboard()
+            reply_markup=create_back_keyboard("category_participants")
         )
         await state.set_state(RegistrationForm.waiting_for_demote_id)
         await callback_query.answer()
@@ -1222,7 +1222,7 @@ def register_admin_participant_handlers(dp: Dispatcher, bot: Bot, admin_id: int)
             await message.answer(
                 f"❌ Пользователь с ID <code>{target_user_id}</code> не найден в списке участников.\n\n"
                 "Проверьте ID в списке участников (/participants).",
-                reply_markup=create_back_keyboard()
+                reply_markup=create_back_keyboard("category_participants")
             )
             return
 
@@ -1244,8 +1244,8 @@ def register_admin_participant_handlers(dp: Dispatcher, bot: Bot, admin_id: int)
                 f"Пользователь переведен из списка участников в очередь ожидания. "
                 f"Лимит автоматически уменьшен."
             )
-            await message.answer(success_message, reply_markup=create_back_keyboard())
-            
+            await message.answer(success_message, reply_markup=create_back_keyboard("category_participants"))
+
             # Notify the user
             try:
                 await bot.send_message(
@@ -1260,10 +1260,10 @@ def register_admin_participant_handlers(dp: Dispatcher, bot: Bot, admin_id: int)
                 logger.info(f"Уведомление о переводе в очередь отправлено пользователю {target_user_id}")
             except Exception as e:
                 logger.warning(f"Не удалось отправить уведомление пользователю {target_user_id}: {e}")
-                
+
         else:
             error_message = f"❌ <b>Ошибка при переводе пользователя:</b>\n\n{result['error']}"
-            await message.answer(error_message, reply_markup=create_back_keyboard())
+            await message.answer(error_message, reply_markup=create_back_keyboard("category_participants"))
 
         await state.clear()
 
