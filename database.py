@@ -2345,14 +2345,14 @@ def approve_slot_transfer(transfer_id: int) -> dict:
             # Delete original participant
             cursor.execute("DELETE FROM participants WHERE user_id = ?", (original_user_id,))
 
-            # Add new participant with same data (except payment status reset to pending)
+            # Add new participant with same data (including payment status from original participant)
             cursor.execute(
                 """
                 INSERT INTO participants
                 (user_id, username, name, target_time, role, reg_date, payment_status, bib_number, gender, category, cluster)
-                VALUES (?, ?, ?, ?, ?, datetime('now'), 'pending', ?, ?, ?, ?)
+                VALUES (?, ?, ?, ?, ?, datetime('now'), ?, ?, ?, ?, ?)
                 """,
-                (new_user_id, new_username, new_name, target_time, role, bib_number, gender, category, cluster)
+                (new_user_id, new_username, new_name, target_time, role, payment_status, bib_number, gender, category, cluster)
             )
 
             # Update transfer status
