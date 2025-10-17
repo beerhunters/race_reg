@@ -310,6 +310,9 @@ def create_race_category_keyboard():
     commands = [
         InlineKeyboardButton(text="🏆 Протокол", callback_data="admin_protocol"),
         InlineKeyboardButton(
+            text="📊 Экспорт в Excel", callback_data="admin_export_excel"
+        ),
+        InlineKeyboardButton(
             text="📂 Архивировать гонку", callback_data="admin_archive_race"
         ),
         InlineKeyboardButton(text="📈 Прошлые гонки", callback_data="admin_past_races"),

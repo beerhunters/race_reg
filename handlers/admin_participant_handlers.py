@@ -2696,6 +2696,92 @@ def register_admin_participant_handlers(dp: Dispatcher, bot: Bot, admin_id: int)
     async def callback_protocol(callback_query: CallbackQuery, state: FSMContext):
         await show_protocol(callback_query, state)
 
+    @dp.callback_query(F.data == "admin_export_excel")
+    async def callback_export_excel(callback: CallbackQuery):
+        """Handle Excel export button"""
+        if callback.from_user.id != admin_id:
+            await callback.answer("❌ Доступ запрещен")
+            return
+
+        await callback.message.delete()
+
+        # Import database function
+        from database import get_participants_for_excel_export
+
+        # Get participants data
+        participants = get_participants_for_excel_export()
+
+        if not participants:
+            await callback.message.answer(
+                "❌ <b>Нет участников для экспорта</b>\n\n"
+                "Участники отсутствуют в базе данных."
+            )
+            await callback.answer()
+            return
+
+        # Create CSV file in memory using StringIO
+        import io as io_module
+        output = io_module.StringIO()
+
+        # Write UTF-8 BOM for Excel
+        output.write('\ufeff')
+
+        writer = csv.writer(output, delimiter=',', quoting=csv.QUOTE_ALL)
+
+        # Write header
+        writer.writerow(['Имя', 'Юзернейм', 'Заявленное время', 'Номер', 'Категория', 'Кластер', 'Результат'])
+
+        # Track current category and cluster for adding separator rows
+        current_category = None
+        current_cluster = None
+
+        for participant in participants:
+            name, username, target_time, bib_number, category, cluster, result = participant
+
+            # Add separator row if category changed
+            if category != current_category:
+                if current_category is not None:  # Don't add separator before first category
+                    writer.writerow(['', '', '', '', '', '', ''])  # Empty row
+                current_category = category
+                current_cluster = None  # Reset cluster when category changes
+
+            # Add separator row if cluster changed (within same category)
+            if cluster and cluster != current_cluster:
+                if current_cluster is not None and category == current_category:
+                    writer.writerow(['', '', '', '', '', '', ''])  # Empty row
+                current_cluster = cluster
+
+            # Write participant row
+            writer.writerow([
+                name or '',
+                f'@{username}' if username else '',
+                target_time or '',
+                bib_number or '',
+                category or '',
+                cluster or '',
+                result or ''
+            ])
+
+        # Convert to bytes for sending
+        file_content = output.getvalue().encode('utf-8')
+
+        # Generate filename with current date
+        from datetime import datetime
+        filename = f"participants_{datetime.now().strftime('%Y%m%d_%H%M%S')}.csv"
+
+        # Send file to admin
+        file = BufferedInputFile(file_content, filename=filename)
+
+        await callback.message.answer_document(
+            document=file,
+            caption=f"📊 <b>Экспорт участников</b>\n\n"
+                    f"Всего участников: {len(participants)}\n"
+                    f"Файл создан: {datetime.now().strftime('%d.%m.%Y %H:%M')}"
+        )
+
+        logger.info(f"Экспорт участников в Excel выполнен администратором (ID: {callback.from_user.id})")
+        await callback.answer()
+
     @dp.callback_query(RegistrationForm.waiting_for_protocol_type)
     async def callback_process_protocol_type(
         callback_query: CallbackQuery, state: FSMContext

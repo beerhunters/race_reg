@@ -1670,23 +1670,23 @@ def get_participants_with_categories() -> list:
             cursor = conn.cursor()
             cursor.execute(
                 """
-                SELECT user_id, username, name, target_time, gender, category, cluster, role, result, bib_number 
-                FROM participants 
-                ORDER BY role = 'runner' DESC, 
-                         CASE category 
-                             WHEN 'Элита' THEN 1 
-                             WHEN 'Классика' THEN 2 
-                             WHEN 'Женский' THEN 3 
-                             WHEN 'Команда' THEN 4 
-                             ELSE 5 
+                SELECT user_id, username, name, target_time, gender, category, cluster, role, result, bib_number
+                FROM participants
+                ORDER BY role = 'runner' DESC,
+                         CASE category
+                             WHEN 'Элита' THEN 1
+                             WHEN 'Классика' THEN 2
+                             WHEN 'Женский' THEN 3
+                             WHEN 'Команда' THEN 4
+                             ELSE 5
                          END ASC,
-                         CASE cluster 
-                             WHEN 'A' THEN 1 
-                             WHEN 'B' THEN 2 
-                             WHEN 'C' THEN 3 
-                             WHEN 'D' THEN 4 
-                             WHEN 'E' THEN 5 
-                             ELSE 6 
+                         CASE cluster
+                             WHEN 'A' THEN 1
+                             WHEN 'B' THEN 2
+                             WHEN 'C' THEN 3
+                             WHEN 'D' THEN 4
+                             WHEN 'E' THEN 5
+                             ELSE 6
                          END ASC,
                          name ASC
                 """
@@ -1694,6 +1694,41 @@ def get_participants_with_categories() -> list:
             return cursor.fetchall()
     except sqlite3.Error as e:
         logger.error(f"Ошибка при получении участников с категориями: {e}")
+        return []
+
+
+def get_participants_for_excel_export() -> list:
+    """Get all participants sorted by category and cluster for Excel export"""
+    try:
+        with sqlite3.connect(DB_PATH) as conn:
+            cursor = conn.cursor()
+            cursor.execute(
+                """
+                SELECT name, username, target_time, bib_number, category, cluster, result
+                FROM participants
+                WHERE role = 'runner'
+                ORDER BY
+                         CASE category
+                             WHEN 'Элита' THEN 1
+                             WHEN 'Классика' THEN 2
+                             WHEN 'Женский' THEN 3
+                             WHEN 'Команда' THEN 4
+                             ELSE 5
+                         END ASC,
+                         CASE cluster
+                             WHEN 'A' THEN 1
+                             WHEN 'B' THEN 2
+                             WHEN 'C' THEN 3
+                             WHEN 'D' THEN 4
+                             WHEN 'E' THEN 5
+                             ELSE 6
+                         END ASC,
+                         name ASC
+                """
+            )
+            return cursor.fetchall()
+    except sqlite3.Error as e:
+        logger.error(f"Ошибка при получении участников для экспорта в Excel: {e}")
         return []
 
 
