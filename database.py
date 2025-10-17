@@ -144,6 +144,27 @@ def init_db():
                 """
             )
 
+            # Create slot_transfers table for slot transfer requests
+            cursor.execute(
+                """
+                CREATE TABLE IF NOT EXISTS slot_transfers (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    original_user_id INTEGER NOT NULL,
+                    original_username TEXT,
+                    original_name TEXT NOT NULL,
+                    new_user_id INTEGER,
+                    new_username TEXT,
+                    new_name TEXT,
+                    referral_code TEXT NOT NULL UNIQUE,
+                    request_date TEXT NOT NULL,
+                    status TEXT DEFAULT 'pending',
+                    admin_decision_date TEXT,
+                    completion_date TEXT,
+                    FOREIGN KEY (original_user_id) REFERENCES participants (user_id)
+                )
+                """
+            )
+
             # Create teams table for team competitions
             cursor.execute(
                 """
@@ -2163,4 +2184,308 @@ def cancel_user_participation(user_id: int) -> dict:
 
     except sqlite3.Error as e:
         logger.error(f"Ошибка при отмене участия пользователя {user_id}: {e}")
+        return {"success": False, "error": f"Ошибка базы данных: {e}"}
+
+
+# ============================================================================
+# SLOT TRANSFER FUNCTIONS
+# ============================================================================
+
+
+def create_slot_transfer_request(user_id: int) -> dict:
+    """
+    Create a slot transfer request and generate unique referral code
+    Returns dict with success status and referral code
+    """
+    import secrets
+
+    try:
+        with sqlite3.connect(DB_PATH, timeout=10) as conn:
+            cursor = conn.cursor()
+
+            # Get participant data
+            cursor.execute(
+                """
+                SELECT username, name, role
+                FROM participants WHERE user_id = ?
+                """,
+                (user_id,)
+            )
+            participant_data = cursor.fetchone()
+
+            if not participant_data:
+                return {"success": False, "error": "Пользователь не найден среди участников"}
+
+            username, name, role = participant_data
+
+            # Check if user already has a pending transfer request
+            cursor.execute(
+                """
+                SELECT id FROM slot_transfers
+                WHERE original_user_id = ? AND status = 'pending'
+                """,
+                (user_id,)
+            )
+            existing_request = cursor.fetchone()
+
+            if existing_request:
+                return {"success": False, "error": "У вас уже есть активный запрос на переоформление"}
+
+            # Generate unique referral code
+            referral_code = secrets.token_urlsafe(8)
+
+            # Create transfer request
+            cursor.execute(
+                """
+                INSERT INTO slot_transfers
+                (original_user_id, original_username, original_name, referral_code, request_date)
+                VALUES (?, ?, ?, ?, datetime('now'))
+                """,
+                (user_id, username, name, referral_code)
+            )
+
+            conn.commit()
+
+            logger.info(f"Создан запрос на переоформление слота для {name} (ID: {user_id}), код: {referral_code}")
+
+            return {
+                "success": True,
+                "referral_code": referral_code,
+                "user_name": name
+            }
+
+    except sqlite3.Error as e:
+        logger.error(f"Ошибка при создании запроса на переоформление слота: {e}")
+        return {"success": False, "error": f"Ошибка базы данных: {e}"}
+
+
+def get_slot_transfer_by_code(referral_code: str) -> tuple:
+    """Get slot transfer request by referral code"""
+    try:
+        with sqlite3.connect(DB_PATH) as conn:
+            cursor = conn.cursor()
+            cursor.execute(
+                """
+                SELECT id, original_user_id, original_username, original_name,
+                       new_user_id, new_username, new_name, referral_code,
+                       request_date, status
+                FROM slot_transfers WHERE referral_code = ?
+                """,
+                (referral_code,)
+            )
+            return cursor.fetchone()
+    except sqlite3.Error as e:
+        logger.error(f"Ошибка при получении запроса на переоформление по коду {referral_code}: {e}")
+        return None
+
+
+def register_new_user_for_transfer(transfer_id: int, new_user_id: int, new_username: str, new_name: str) -> bool:
+    """Register new user information for slot transfer"""
+    try:
+        with sqlite3.connect(DB_PATH, timeout=10) as conn:
+            cursor = conn.cursor()
+            cursor.execute(
+                """
+                UPDATE slot_transfers
+                SET new_user_id = ?, new_username = ?, new_name = ?, status = 'awaiting_approval'
+                WHERE id = ?
+                """,
+                (new_user_id, new_username, new_name, transfer_id)
+            )
+            success = cursor.rowcount > 0
+            conn.commit()
+
+            if success:
+                logger.info(f"Новый пользователь {new_name} (ID: {new_user_id}) зарегистрирован для переоформления transfer_id={transfer_id}")
+            return success
+    except sqlite3.Error as e:
+        logger.error(f"Ошибка при регистрации нового пользователя для переоформления: {e}")
+        return False
+
+
+def approve_slot_transfer(transfer_id: int) -> dict:
+    """
+    Approve slot transfer: replace original participant with new one
+    Returns dict with success status and details
+    """
+    try:
+        with sqlite3.connect(DB_PATH, timeout=10) as conn:
+            cursor = conn.cursor()
+
+            # Get transfer details
+            cursor.execute(
+                """
+                SELECT original_user_id, original_name, new_user_id, new_username, new_name
+                FROM slot_transfers WHERE id = ? AND status = 'awaiting_approval'
+                """,
+                (transfer_id,)
+            )
+            transfer_data = cursor.fetchone()
+
+            if not transfer_data:
+                return {"success": False, "error": "Запрос не найден или уже обработан"}
+
+            original_user_id, original_name, new_user_id, new_username, new_name = transfer_data
+
+            # Get original participant data
+            cursor.execute(
+                """
+                SELECT target_time, role, gender, payment_status, bib_number, category, cluster
+                FROM participants WHERE user_id = ?
+                """,
+                (original_user_id,)
+            )
+            participant_data = cursor.fetchone()
+
+            if not participant_data:
+                return {"success": False, "error": "Оригинальный участник не найден"}
+
+            target_time, role, gender, payment_status, bib_number, category, cluster = participant_data
+
+            # Delete original participant
+            cursor.execute("DELETE FROM participants WHERE user_id = ?", (original_user_id,))
+
+            # Add new participant with same data (except payment status reset to pending)
+            cursor.execute(
+                """
+                INSERT INTO participants
+                (user_id, username, name, target_time, role, reg_date, payment_status, bib_number, gender, category, cluster)
+                VALUES (?, ?, ?, ?, ?, datetime('now'), 'pending', ?, ?, ?, ?)
+                """,
+                (new_user_id, new_username, new_name, target_time, role, bib_number, gender, category, cluster)
+            )
+
+            # Update transfer status
+            cursor.execute(
+                """
+                UPDATE slot_transfers
+                SET status = 'completed', admin_decision_date = datetime('now'), completion_date = datetime('now')
+                WHERE id = ?
+                """,
+                (transfer_id,)
+            )
+
+            conn.commit()
+
+            logger.info(f"Переоформление слота одобрено: {original_name} -> {new_name} (transfer_id={transfer_id})")
+
+            return {
+                "success": True,
+                "original_user_id": original_user_id,
+                "original_name": original_name,
+                "new_user_id": new_user_id,
+                "new_name": new_name,
+                "role": role
+            }
+
+    except sqlite3.Error as e:
+        logger.error(f"Ошибка при одобрении переоформления слота: {e}")
+        return {"success": False, "error": f"Ошибка базы данных: {e}"}
+
+
+def reject_slot_transfer(transfer_id: int) -> dict:
+    """
+    Reject slot transfer request
+    Returns dict with success status
+    """
+    try:
+        with sqlite3.connect(DB_PATH, timeout=10) as conn:
+            cursor = conn.cursor()
+
+            # Get transfer details
+            cursor.execute(
+                """
+                SELECT original_user_id, original_name, new_user_id, new_name
+                FROM slot_transfers WHERE id = ? AND status = 'awaiting_approval'
+                """,
+                (transfer_id,)
+            )
+            transfer_data = cursor.fetchone()
+
+            if not transfer_data:
+                return {"success": False, "error": "Запрос не найден или уже обработан"}
+
+            original_user_id, original_name, new_user_id, new_name = transfer_data
+
+            # Update transfer status
+            cursor.execute(
+                """
+                UPDATE slot_transfers
+                SET status = 'rejected', admin_decision_date = datetime('now')
+                WHERE id = ?
+                """,
+                (transfer_id,)
+            )
+
+            conn.commit()
+
+            logger.info(f"Переоформление слота отклонено: {original_name} -> {new_name} (transfer_id={transfer_id})")
+
+            return {
+                "success": True,
+                "original_user_id": original_user_id,
+                "original_name": original_name,
+                "new_user_id": new_user_id,
+                "new_name": new_name
+            }
+
+    except sqlite3.Error as e:
+        logger.error(f"Ошибка при отклонении переоформления слота: {e}")
+        return {"success": False, "error": f"Ошибка базы данных: {e}"}
+
+
+def get_pending_slot_transfers() -> list:
+    """Get all pending slot transfer requests awaiting admin approval"""
+    try:
+        with sqlite3.connect(DB_PATH) as conn:
+            cursor = conn.cursor()
+            cursor.execute(
+                """
+                SELECT id, original_user_id, original_username, original_name,
+                       new_user_id, new_username, new_name, referral_code, request_date
+                FROM slot_transfers WHERE status = 'awaiting_approval'
+                ORDER BY request_date ASC
+                """
+            )
+            return cursor.fetchall()
+    except sqlite3.Error as e:
+        logger.error(f"Ошибка при получении списка запросов на переоформление: {e}")
+        return []
+
+
+def cancel_slot_transfer_request(user_id: int) -> dict:
+    """Cancel pending slot transfer request by original user"""
+    try:
+        with sqlite3.connect(DB_PATH, timeout=10) as conn:
+            cursor = conn.cursor()
+
+            # Check if user has pending transfer
+            cursor.execute(
+                """
+                SELECT id, original_name FROM slot_transfers
+                WHERE original_user_id = ? AND status = 'pending'
+                """,
+                (user_id,)
+            )
+            transfer_data = cursor.fetchone()
+
+            if not transfer_data:
+                return {"success": False, "error": "У вас нет активного запроса на переоформление"}
+
+            transfer_id, original_name = transfer_data
+
+            # Delete the transfer request
+            cursor.execute("DELETE FROM slot_transfers WHERE id = ?", (transfer_id,))
+
+            conn.commit()
+
+            logger.info(f"Запрос на переоформление слота отменен пользователем {original_name} (ID: {user_id})")
+
+            return {
+                "success": True,
+                "user_name": original_name
+            }
+
+    except sqlite3.Error as e:
+        logger.error(f"Ошибка при отмене запроса на переоформление: {e}")
         return {"success": False, "error": f"Ошибка базы данных: {e}"}

@@ -92,6 +92,14 @@ async def handle_start_command(
     user_id = message.from_user.id
     log.command_received("/start", user_id, message.from_user.username)
 
+    # Проверяем наличие реферального кода в команде /start
+    if message.text and len(message.text.split()) > 1:
+        referral_code = message.text.split()[1]
+        # Импортируем обработчик реферальных ссылок
+        from .slot_transfer_handlers import handle_referral_start
+        await handle_referral_start(message, referral_code, bot, admin_id, state)
+        return
+
     # Проверка, является ли пользователь администратором
     if user_id == admin_id:
         log.admin_action("start_command_accessed", user_id)
@@ -226,9 +234,14 @@ async def handle_start_command(
         else:
             participant_info += "🎉 Все готово к старту! Увидимся на мероприятии!"
 
-        # Создаем клавиатуру с кнопкой "Отменить участие"
-        cancel_keyboard = InlineKeyboardMarkup(
+        # Создаем клавиатуру с кнопками "Переоформить слот" и "Отменить участие"
+        participant_keyboard = InlineKeyboardMarkup(
             inline_keyboard=[
+                [
+                    InlineKeyboardButton(
+                        text="🔄 Переоформить слот", callback_data="slot_transfer"
+                    )
+                ],
                 [
                     InlineKeyboardButton(
                         text="❌ Отменить участие", callback_data="cancel_participation"
@@ -237,7 +250,7 @@ async def handle_start_command(
             ]
         )
 
-        await message.answer(participant_info, reply_markup=cancel_keyboard)
+        await message.answer(participant_info, reply_markup=participant_keyboard)
         return
 
     # Проверка нахождения в очереди ожидания
@@ -494,7 +507,19 @@ async def handle_gender_selection(
                     f"💼 <b>Текущий лимит:</b> {max_runners}\n"
                 )
 
-                await bot.send_message(admin_id, admin_text)
+                # Создаем клавиатуру с кнопкой для перевода из очереди
+                waitlist_admin_keyboard = InlineKeyboardMarkup(
+                    inline_keyboard=[
+                        [
+                            InlineKeyboardButton(
+                                text="✅ Перевести из листа ожидания",
+                                callback_data=f"promote_from_waitlist_{user_id}"
+                            )
+                        ]
+                    ]
+                )
+
+                await bot.send_message(admin_id, admin_text, reply_markup=waitlist_admin_keyboard)
 
             except Exception as e:
                 logger.error(
