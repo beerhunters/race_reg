@@ -180,8 +180,67 @@ def register_admin_participant_handlers(dp: Dispatcher, bot: Bot, admin_id: int)
 
         from .utils import create_settings_category_keyboard
 
+        # Get current settings values
+        max_runners = get_setting("max_runners")
+        current_runners = get_participant_count_by_role("runner")
+        reg_end_date = get_setting("reg_end_date")
+        participation_price = get_setting("participation_price")
+        event_date = get_setting("event_date")
+        event_location = get_setting("event_location")
+
+        # Format settings text
+        text = "⚙️ <b>Настройки системы</b>\n\n"
+        text += "📊 <b>Текущие значения:</b>\n\n"
+
+        # Runners limit
+        if max_runners is not None and current_runners is not None:
+            try:
+                max_runners = int(max_runners)
+                current_runners = int(current_runners)
+                available_slots = max(0, max_runners - current_runners)
+                text += f"🔢 <b>Лимит участников:</b> {max_runners}\n"
+                text += f"   • Зарегистрировано: {current_runners}\n"
+                text += f"   • Свободных мест: {available_slots}\n\n"
+            except (ValueError, TypeError):
+                text += f"🔢 <b>Лимит участников:</b> {max_runners}\n\n"
+        else:
+            text += "🔢 <b>Лимит участников:</b> не установлен\n\n"
+
+        # Registration end date
+        if reg_end_date:
+            text += f"📅 <b>Дата окончания регистрации:</b>\n   {reg_end_date} (МСК)\n\n"
+        else:
+            text += "📅 <b>Дата окончания регистрации:</b> не установлена\n\n"
+
+        # Participation price
+        if participation_price is not None:
+            try:
+                price = int(participation_price)
+                if price == 0:
+                    text += "💰 <b>Цена участия:</b> бесплатно\n\n"
+                else:
+                    text += f"💰 <b>Цена участия:</b> {price} руб.\n\n"
+            except (ValueError, TypeError):
+                text += f"💰 <b>Цена участия:</b> {participation_price}\n\n"
+        else:
+            text += "💰 <b>Цена участия:</b> не установлена\n\n"
+
+        # Event date
+        if event_date:
+            text += f"📅 <b>Дата мероприятия:</b> {event_date}\n\n"
+        else:
+            text += "📅 <b>Дата мероприятия:</b> не установлена\n\n"
+
+        # Event location
+        if event_location:
+            text += f"📍 <b>Место мероприятия:</b> {event_location}\n\n"
+        else:
+            text += "📍 <b>Место мероприятия:</b> не установлено\n\n"
+
+        text += "👇 <b>Выберите действие:</b>"
+
         await callback.message.edit_text(
-            "⚙️ <b>Настройки системы</b>\n\nВыберите действие:",
+            text,
             reply_markup=create_settings_category_keyboard(),
         )
         await callback.answer()
