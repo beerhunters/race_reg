@@ -98,6 +98,9 @@ class RegistrationForm(StatesGroup):
     # Personal confirmation request states
     selecting_participant_for_confirmation = State()
 
+    # Bib number info upload state
+    waiting_for_bib_info_file = State()
+
     processed = State()
 
 
@@ -322,6 +325,9 @@ def create_race_category_keyboard():
             text="📂 Архивировать гонку", callback_data="admin_archive_race"
         ),
         InlineKeyboardButton(text="📈 Прошлые гонки", callback_data="admin_past_races"),
+        InlineKeyboardButton(
+            text="🔢 Загрузить информацию о номерах", callback_data="admin_upload_bib_info"
+        ),
         InlineKeyboardButton(text="🏠 Главное меню", callback_data="main_menu"),
     ]
     return InlineKeyboardMarkup(inline_keyboard=[[cmd] for cmd in commands])
@@ -414,6 +420,9 @@ def create_settings_category_keyboard():
         InlineKeyboardButton(
             text="🤝 Обновить спонсорское изображение",
             callback_data="admin_update_sponsor",
+        ),
+        InlineKeyboardButton(
+            text="👥 Выгрузить пользователей", callback_data="admin_export_users"
         ),
         InlineKeyboardButton(text="🏠 Главное меню", callback_data="main_menu"),
     ]

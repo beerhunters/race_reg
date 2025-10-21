@@ -182,6 +182,16 @@ def init_db():
                 """
             )
 
+            # Create bib_numbers_info table for storing bib number descriptions
+            cursor.execute(
+                """
+                CREATE TABLE IF NOT EXISTS bib_numbers_info (
+                    bib_number TEXT PRIMARY KEY,
+                    description TEXT NOT NULL
+                )
+                """
+            )
+
             conn.commit()
             logger.info("База данных инициализирована")
     except sqlite3.Error as e:
@@ -2524,3 +2534,69 @@ def cancel_slot_transfer_request(user_id: int) -> dict:
     except sqlite3.Error as e:
         logger.error(f"Ошибка при отмене запроса на переоформление: {e}")
         return {"success": False, "error": f"Ошибка базы данных: {e}"}
+
+
+# ============================================================================
+# BIB NUMBERS INFO MANAGEMENT FUNCTIONS
+# ============================================================================
+
+
+def clear_bib_numbers_info() -> bool:
+    """Clear all bib numbers info from database"""
+    try:
+        with sqlite3.connect(DB_PATH, timeout=10) as conn:
+            cursor = conn.cursor()
+            cursor.execute("DELETE FROM bib_numbers_info")
+            conn.commit()
+            logger.info("Очищена таблица bib_numbers_info")
+            return True
+    except sqlite3.Error as e:
+        logger.error(f"Ошибка при очистке таблицы bib_numbers_info: {e}")
+        return False
+
+
+def add_bib_number_info(bib_number: str, description: str) -> bool:
+    """Add or update bib number description"""
+    try:
+        with sqlite3.connect(DB_PATH, timeout=10) as conn:
+            cursor = conn.cursor()
+            cursor.execute(
+                "INSERT OR REPLACE INTO bib_numbers_info (bib_number, description) VALUES (?, ?)",
+                (bib_number, description)
+            )
+            conn.commit()
+            logger.info(f"Добавлена информация для номера {bib_number}: {description}")
+            return True
+    except sqlite3.Error as e:
+        logger.error(f"Ошибка при добавлении информации для номера {bib_number}: {e}")
+        return False
+
+
+def get_bib_number_description(bib_number: str) -> str:
+    """Get description for a bib number"""
+    try:
+        with sqlite3.connect(DB_PATH) as conn:
+            cursor = conn.cursor()
+            cursor.execute(
+                "SELECT description FROM bib_numbers_info WHERE bib_number = ?",
+                (bib_number,)
+            )
+            result = cursor.fetchone()
+            return result[0] if result else None
+    except sqlite3.Error as e:
+        logger.error(f"Ошибка при получении описания для номера {bib_number}: {e}")
+        return None
+
+
+def get_all_bib_numbers_info() -> list:
+    """Get all bib numbers with descriptions"""
+    try:
+        with sqlite3.connect(DB_PATH) as conn:
+            cursor = conn.cursor()
+            cursor.execute(
+                "SELECT bib_number, description FROM bib_numbers_info ORDER BY bib_number ASC"
+            )
+            return cursor.fetchall()
+    except sqlite3.Error as e:
+        logger.error(f"Ошибка при получении списка номеров с описаниями: {e}")
+        return []

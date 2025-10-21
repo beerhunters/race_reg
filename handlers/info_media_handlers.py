@@ -491,4 +491,281 @@ def register_info_media_handlers(dp: Dispatcher, bot: Bot, admin_id: int):
 
         await state.clear()
 
+    @dp.callback_query(F.data == "admin_export_users")
+    async def export_all_users(callback_query: CallbackQuery, state: FSMContext):
+        """Export all users from database to CSV"""
+        user_id = callback_query.from_user.id
+        if user_id != admin_id:
+            await callback_query.answer("❌ Доступ запрещен")
+            return
+
+        logger.info(f"Команда экспорта пользователей от user_id={user_id}")
+        await callback_query.message.delete()
+
+        try:
+            import io
+            import csv
+            import sqlite3
+            from datetime import datetime
+            import pytz
+            from aiogram.types import BufferedInputFile
+
+            delimiter = config.get("csv_delimiter", ";")
+            output = io.StringIO()
+
+            writer = csv.writer(
+                output,
+                lineterminator="\n",
+                delimiter=delimiter,
+                quoting=csv.QUOTE_MINIMAL,
+            )
+
+            # Helper function to format dates
+            def format_date(date_str):
+                if not date_str:
+                    return "—"
+                try:
+                    # Parse ISO format date
+                    dt = datetime.fromisoformat(date_str.replace('Z', '+00:00'))
+                    # Convert to Moscow timezone
+                    moscow_tz = pytz.timezone('Europe/Moscow')
+                    dt_moscow = dt.astimezone(moscow_tz)
+                    return dt_moscow.strftime('%d.%m.%Y %H:%M:%S')
+                except:
+                    return str(date_str)
+
+            total_count = 0
+
+            with sqlite3.connect("/app/data/race_participants.db", timeout=10) as conn:
+                cursor = conn.cursor()
+
+                # 1. Export participants table
+                writer.writerow(["=== УЧАСТНИКИ (PARTICIPANTS) ==="])
+                writer.writerow([])
+                writer.writerow([
+                    "User ID",
+                    "Username",
+                    "Имя",
+                    "Целевое время",
+                    "Роль",
+                    "Дата регистрации",
+                    "Статус оплаты",
+                    "Беговой номер",
+                    "Результат",
+                    "Пол",
+                    "Категория",
+                    "Кластер"
+                ])
+
+                cursor.execute("""
+                    SELECT user_id, username, name, target_time, role, reg_date,
+                           payment_status, bib_number, result, gender, category, cluster
+                    FROM participants
+                    ORDER BY reg_date
+                """)
+                participants = cursor.fetchall()
+
+                for p in participants:
+                    writer.writerow([
+                        p[0],  # user_id
+                        p[1] or "—",  # username
+                        p[2] or "—",  # name
+                        p[3] or "—",  # target_time
+                        p[4] or "—",  # role
+                        format_date(p[5]),  # reg_date
+                        p[6] or "—",  # payment_status
+                        p[7] or "—",  # bib_number
+                        p[8] or "—",  # result
+                        p[9] or "—",  # gender
+                        p[10] or "—",  # category
+                        p[11] or "—",  # cluster
+                    ])
+                    total_count += 1
+
+                writer.writerow([])
+                writer.writerow([])
+
+                # 2. Export pending registrations
+                writer.writerow(["=== НЕЗАВЕРШЕННЫЕ РЕГИСТРАЦИИ (PENDING_REGISTRATIONS) ==="])
+                writer.writerow([])
+                writer.writerow([
+                    "User ID",
+                    "Username",
+                    "Имя",
+                    "Целевое время",
+                    "Роль"
+                ])
+
+                cursor.execute("""
+                    SELECT user_id, username, name, target_time, role
+                    FROM pending_registrations
+                    ORDER BY user_id
+                """)
+                pending = cursor.fetchall()
+
+                for p in pending:
+                    writer.writerow([
+                        p[0],  # user_id
+                        p[1] or "—",  # username
+                        p[2] or "—",  # name
+                        p[3] or "—",  # target_time
+                        p[4] or "—",  # role
+                    ])
+                    total_count += 1
+
+                writer.writerow([])
+                writer.writerow([])
+
+                # 3. Export waitlist
+                writer.writerow(["=== ЛИСТ ОЖИДАНИЯ (WAITLIST) ==="])
+                writer.writerow([])
+                writer.writerow([
+                    "ID",
+                    "User ID",
+                    "Username",
+                    "Имя",
+                    "Целевое время",
+                    "Роль",
+                    "Пол",
+                    "Дата присоединения",
+                    "Статус"
+                ])
+
+                cursor.execute("""
+                    SELECT id, user_id, username, name, target_time, role,
+                           gender, join_date, status
+                    FROM waitlist
+                    ORDER BY join_date
+                """)
+                waitlist = cursor.fetchall()
+
+                for w in waitlist:
+                    writer.writerow([
+                        w[0],  # id
+                        w[1],  # user_id
+                        w[2] or "—",  # username
+                        w[3] or "—",  # name
+                        w[4] or "—",  # target_time
+                        w[5] or "—",  # role
+                        w[6] or "—",  # gender
+                        format_date(w[7]),  # join_date
+                        w[8] or "—",  # status
+                    ])
+                    total_count += 1
+
+                writer.writerow([])
+                writer.writerow([])
+
+                # 4. Export bot users
+                writer.writerow(["=== ВСЕ ПОЛЬЗОВАТЕЛИ БОТА (BOT_USERS) ==="])
+                writer.writerow([])
+                writer.writerow([
+                    "User ID",
+                    "Username",
+                    "Имя",
+                    "Фамилия",
+                    "Первое взаимодействие",
+                    "Последнее взаимодействие"
+                ])
+
+                cursor.execute("""
+                    SELECT user_id, username, first_name, last_name,
+                           first_interaction, last_interaction
+                    FROM bot_users
+                    ORDER BY first_interaction
+                """)
+                bot_users = cursor.fetchall()
+
+                for u in bot_users:
+                    writer.writerow([
+                        u[0],  # user_id
+                        u[1] or "—",  # username
+                        u[2] or "—",  # first_name
+                        u[3] or "—",  # last_name
+                        format_date(u[4]),  # first_interaction
+                        format_date(u[5]),  # last_interaction
+                    ])
+
+                writer.writerow([])
+                writer.writerow([])
+
+                # 5. Export teams if table exists
+                try:
+                    cursor.execute("""
+                        SELECT name FROM sqlite_master
+                        WHERE type='table' AND name='teams'
+                    """)
+                    if cursor.fetchone():
+                        writer.writerow(["=== КОМАНДЫ (TEAMS) ==="])
+                        writer.writerow([])
+                        writer.writerow([
+                            "ID",
+                            "Участник 1 (User ID)",
+                            "Участник 2 (User ID)",
+                            "Результат",
+                            "Дата создания"
+                        ])
+
+                        cursor.execute("""
+                            SELECT id, member1_id, member2_id, result, created_at
+                            FROM teams
+                            ORDER BY created_at
+                        """)
+                        teams = cursor.fetchall()
+
+                        for t in teams:
+                            writer.writerow([
+                                t[0],  # id
+                                t[1] or "—",  # member1_id
+                                t[2] or "—",  # member2_id
+                                t[3] or "—",  # result
+                                format_date(t[4]),  # created_at
+                            ])
+                            total_count += 1
+
+                        writer.writerow([])
+                        writer.writerow([])
+                except:
+                    pass  # Table doesn't exist
+
+            csv_content = output.getvalue()
+            output.close()
+
+            # Generate timestamp for filename
+            moscow_timezone = pytz.timezone("Europe/Moscow")
+            moscow_now = datetime.now(moscow_timezone)
+            timestamp = moscow_now.strftime("%Y%m%d_%H%M%S")
+            filename = f"all_users_{timestamp}.csv"
+
+            logger.info(
+                f"CSV-файл пользователей сформирован, размер: {len(csv_content)} символов"
+            )
+
+            csv_bytes = csv_content.encode("utf-8-sig")
+            await callback_query.message.answer_document(
+                document=BufferedInputFile(csv_bytes, filename=filename)
+            )
+
+            # Statistics message
+            stats_text = "✅ <b>Экспорт пользователей завершён</b>\n\n"
+            stats_text += f"📊 <b>Экспортировано записей:</b>\n"
+            stats_text += f"• Участников: {len(participants)}\n"
+            stats_text += f"• Незавершённых регистраций: {len(pending)}\n"
+            stats_text += f"• В листе ожидания: {len(waitlist)}\n"
+            stats_text += f"• Всего пользователей бота: {len(bot_users)}\n"
+            stats_text += f"\n📁 Файл содержит все таблицы БД с разделением по категориям"
+
+            await callback_query.message.answer(stats_text)
+            logger.info(
+                f"CSV-файл пользователей успешно отправлен для user_id={user_id}"
+            )
+
+        except Exception as e:
+            logger.error(f"Ошибка при экспорте пользователей: {e}")
+            await callback_query.message.answer(
+                "❌ Произошла ошибка при экспорте пользователей. Проверьте логи."
+            )
+
+        await callback_query.answer()
+
     logger.info("Обработчики информации и медиа зарегистрированы")

@@ -65,9 +65,17 @@ def register_cluster_handlers(dp: Dispatcher, bot: Bot, admin_id: int):
             )
             return
 
-        # Sort participants by registration date (reg_date is at index 4)
+        # Sort participants:
+        # 1. First - those without category (None or empty)
+        # 2. Among each group - reverse registration order (last registered first)
         # Participant tuple: (user_id, username, name, target_time, reg_date, gender, category, cluster, ...)
-        participants = sorted(participants, key=lambda p: p[4] if p[4] else "")
+        participants = sorted(
+            participants,
+            key=lambda p: (
+                bool(p[6]),  # False (no category) comes before True (has category)
+                -(ord(p[4][-1]) if p[4] else 0)  # Reverse order by last char of reg_date (newest first)
+            )
+        )
 
         # Store participants list in state data
         await state.update_data(
@@ -100,8 +108,17 @@ def register_cluster_handlers(dp: Dispatcher, bot: Bot, admin_id: int):
             )
             return
 
-        # Sort participants by registration date (reg_date is at index 4)
-        participants = sorted(participants, key=lambda p: p[4] if p[4] else "")
+        # Sort participants:
+        # 1. First - those without cluster (None or empty)
+        # 2. Among each group - reverse registration order (last registered first)
+        # Participant tuple: (user_id, username, name, target_time, reg_date, gender, category, cluster, ...)
+        participants = sorted(
+            participants,
+            key=lambda p: (
+                bool(p[7] if len(p) > 7 else None),  # False (no cluster) comes before True (has cluster)
+                -(ord(p[4][-1]) if p[4] else 0)  # Reverse order by last char of reg_date (newest first)
+            )
+        )
 
         # Store participants list in state data
         await state.update_data(

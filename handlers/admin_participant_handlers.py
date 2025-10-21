@@ -487,10 +487,13 @@ def register_admin_participant_handlers(dp: Dispatcher, bot: Bot, admin_id: int)
             if current.strip():
                 chunks.append(current.rstrip())
 
-            for chunk in chunks:
-                await message.answer(chunk)
+            for i, chunk in enumerate(chunks):
+                if i == len(chunks) - 1:  # Last chunk
+                    await message.answer(chunk, reply_markup=create_back_keyboard("category_participants"))
+                else:
+                    await message.answer(chunk)
         else:
-            await message.answer(text)
+            await message.answer(text, reply_markup=create_back_keyboard("category_participants"))
 
     @dp.message(Command("pending"))
     async def cmd_show_pending_registrations(message: Message):
@@ -615,7 +618,7 @@ def register_admin_participant_handlers(dp: Dispatcher, bot: Bot, admin_id: int)
             
             text += f"{status_emoji} <b>Статус:</b> {status_text}\n"
 
-            await message.answer(text)
+            await message.answer(text, reply_markup=create_back_keyboard("category_participants"))
 
         except sqlite3.Error as e:
             logger.error(f"Ошибка при получении статистики: {e}")
@@ -1092,11 +1095,23 @@ def register_admin_participant_handlers(dp: Dispatcher, bot: Bot, admin_id: int)
                     )
                 )
                 try:
+                    # Get bib number description if exists
+                    from database import get_bib_number_description
+
+                    bib_description = get_bib_number_description(bib_number)
+
+                    # Prepare notification message
+                    notification_text = messages["bib_number_assigned"].format(
+                        bib_number=bib_number
+                    )
+
+                    # Add description if found
+                    if bib_description:
+                        notification_text += f"\n\n📋 <b>Информация о номере:</b>\n{bib_description}"
+
                     await bot.send_message(
                         chat_id=user_id,
-                        text=messages["bib_number_assigned"].format(
-                            bib_number=bib_number
-                        ),
+                        text=notification_text,
                     )
                     logger.info(
                         f"Уведомление о присвоении номера {bib_number} отправлено пользователю user_id={user_id}"
@@ -1854,9 +1869,6 @@ def register_admin_participant_handlers(dp: Dispatcher, bot: Bot, admin_id: int)
             delimiter = config.get("csv_delimiter", ";")
             output = io.StringIO()
 
-            # Use global function for date formatting
-
-            # Export all tables to one CSV file
             writer = csv.writer(
                 output,
                 lineterminator="\n",
@@ -1864,201 +1876,135 @@ def register_admin_participant_handlers(dp: Dispatcher, bot: Bot, admin_id: int)
                 quoting=csv.QUOTE_MINIMAL,
             )
 
-            # 1. Participants table
-            writer.writerow(["=== УЧАСТНИКИ ==="])
+            # Get all participants
+            participants = get_all_participants()
+
+            # Check if we have categories or clusters assigned
+            has_categories = any(p[10] for p in participants)  # category field
+            has_clusters = any(p[11] for p in participants)  # cluster field
+
+            # Write header
             writer.writerow(
                 [
-                    "User ID",
-                    "Username",
                     "Имя",
-                    "Целевое время",
-                    "Роль",
-                    "Дата регистрации",
-                    "Статус оплаты",
-                    "Беговой номер",
-                    "Результат",
-                    "Пол",
+                    "Юзернейм",
+                    "Заявленное время",
+                    "Номер",
                     "Категория",
                     "Кластер",
+                    "Результат",
                 ]
             )
 
-            participants = get_all_participants()
-            for participant in participants:
-                (
-                    user_id_p,
-                    username,
-                    name,
-                    target_time,
-                    role,
-                    reg_date,
-                    payment_status,
-                    bib_number,
-                    result,
-                    gender,
-                    category,
-                    cluster,
-                ) = participant
-                writer.writerow(
-                    [
+            if has_categories or has_clusters:
+                # Group by categories and clusters
+                # Define category priority for sorting
+                category_priority = {
+                    "СуперЭлита": 1,
+                    "Элита": 2,
+                    "Классика": 3,
+                    "Женский": 4,
+                    "Команда": 5,
+                }
+
+                # Define cluster order
+                cluster_order = ['A', 'B', 'C', 'D', 'E', 'F', 'G']
+
+                # Group participants
+                grouped = {}
+                for participant in participants:
+                    category = participant[10] or "Без категории"
+                    cluster = participant[11] or "Без кластера"
+
+                    if category not in grouped:
+                        grouped[category] = {}
+                    if cluster not in grouped[category]:
+                        grouped[category][cluster] = []
+
+                    grouped[category][cluster].append(participant)
+
+                # Sort categories
+                sorted_categories = sorted(
+                    grouped.keys(),
+                    key=lambda x: category_priority.get(x, 999)
+                )
+
+                # Write data grouped by category and cluster
+                for category in sorted_categories:
+                    # Sort clusters within category
+                    sorted_clusters = sorted(
+                        grouped[category].keys(),
+                        key=lambda x: cluster_order.index(x) if x in cluster_order else 999
+                    )
+
+                    for cluster in sorted_clusters:
+                        cluster_participants = grouped[category][cluster]
+
+                        # Write each participant
+                        for participant in cluster_participants:
+                            (
+                                user_id_p,
+                                username,
+                                name,
+                                target_time,
+                                role,
+                                reg_date,
+                                payment_status,
+                                bib_number,
+                                result,
+                                gender,
+                                category_p,
+                                cluster_p,
+                            ) = participant
+
+                            writer.writerow(
+                                [
+                                    name,
+                                    username or "—",
+                                    target_time or "—",
+                                    bib_number or "—",
+                                    category_p or "—",
+                                    cluster_p or "—",
+                                    result or "—",
+                                ]
+                            )
+
+                        # Empty row separator after each cluster
+                        writer.writerow([])
+            else:
+                # Sort by registration date if no categories/clusters
+                sorted_participants = sorted(
+                    participants,
+                    key=lambda x: x[5]  # reg_date field
+                )
+
+                for participant in sorted_participants:
+                    (
                         user_id_p,
-                        username or "—",
+                        username,
                         name,
-                        target_time or "—",
+                        target_time,
                         role,
-                        format_date_to_moscow(reg_date),
+                        reg_date,
                         payment_status,
-                        bib_number or "—",
-                        result or "—",
-                        gender or "—",
-                        category or "—",
-                        cluster or "—",
-                    ]
-                )
+                        bib_number,
+                        result,
+                        gender,
+                        category,
+                        cluster,
+                    ) = participant
 
-            writer.writerow([])  # Empty row separator
-
-            # 2. Pending registrations table
-            writer.writerow(["=== НЕЗАВЕРШЕННЫЕ РЕГИСТРАЦИИ ==="])
-            writer.writerow(["User ID", "Username", "Имя", "Целевое время", "Роль"])
-
-            pending_users = get_pending_registrations()
-            for pending in pending_users:
-                user_id_p, username, name, target_time, role = pending
-                writer.writerow(
-                    [
-                        user_id_p,
-                        username or "—",
-                        name or "—",
-                        target_time or "—",
-                        role or "—",
-                    ]
-                )
-
-            writer.writerow([])  # Empty row separator
-
-            # 3. Waitlist table
-            writer.writerow(["=== ОЧЕРЕДЬ ОЖИДАНИЯ ==="])
-            writer.writerow(
-                [
-                    "ID",
-                    "User ID",
-                    "Username",
-                    "Имя",
-                    "Целевое время",
-                    "Роль",
-                    "Пол",
-                    "Дата присоединения",
-                    "Статус",
-                ]
-            )
-
-            from database import get_waitlist_by_role
-
-            waitlist_data = get_waitlist_by_role()
-            for waitlist_entry in waitlist_data:
-                (
-                    id_w,
-                    user_id_w,
-                    username_w,
-                    name_w,
-                    target_time_w,
-                    role_w,
-                    gender_w,
-                    join_date,
-                    status,
-                ) = waitlist_entry
-                writer.writerow(
-                    [
-                        id_w,
-                        user_id_w,
-                        username_w or "—",
-                        name_w or "—",
-                        target_time_w or "—",
-                        role_w or "—",
-                        gender_w or "—",
-                        format_date_to_moscow(join_date),
-                        status or "—",
-                    ]
-                )
-
-            writer.writerow([])  # Empty row separator
-
-            # 4. Settings table
-            writer.writerow(["=== НАСТРОЙКИ ==="])
-            writer.writerow(["Ключ", "Значение"])
-
-            try:
-                with sqlite3.connect(
-                    "/app/data/race_participants.db", timeout=10
-                ) as conn:
-                    cursor = conn.cursor()
-                    cursor.execute("SELECT key, value FROM settings")
-                    settings = cursor.fetchall()
-                    for key, value in settings:
-                        writer.writerow([key, value])
-            except sqlite3.Error as e:
-                logger.error(f"Ошибка при получении настроек: {e}")
-                writer.writerow(["Ошибка", f"Не удалось получить настройки: {e}"])
-
-            writer.writerow([])  # Empty row separator
-
-            # 5. Bot users table
-            writer.writerow(["=== ПОЛЬЗОВАТЕЛИ БОТА ==="])
-            writer.writerow(
-                [
-                    "User ID",
-                    "Username",
-                    "Имя",
-                    "Фамилия",
-                    "Первое взаимодействие",
-                    "Последнее взаимодействие",
-                ]
-            )
-
-            try:
-                from database import get_all_bot_users
-
-                bot_users = get_all_bot_users()
-                for bot_user in bot_users:
-                    if len(bot_user) >= 6:
-                        (
-                            user_id_b,
-                            username_b,
-                            first_name,
-                            last_name,
-                            first_interaction,
-                            last_interaction,
-                        ) = bot_user
-                        # Format dates
-                        first_date = format_date_to_moscow(first_interaction)
-                        last_date = format_date_to_moscow(last_interaction)
-                        writer.writerow(
-                            [
-                                user_id_b,
-                                username_b or "—",
-                                first_name or "—",
-                                last_name or "—",
-                                first_date,
-                                last_date,
-                            ]
-                        )
-                    else:
-                        logger.warning(
-                            f"Некорректный формат данных пользователя: {bot_user}"
-                        )
-            except Exception as e:
-                logger.error(f"Ошибка при получении пользователей бота: {e}")
-                writer.writerow(
-                    [
-                        "Ошибка",
-                        f"Не удалось получить пользователей: {e}",
-                        "",
-                        "",
-                        "",
-                        "",
-                    ]
-                )
+                    writer.writerow(
+                        [
+                            name,
+                            username or "—",
+                            target_time or "—",
+                            bib_number or "—",
+                            category or "—",
+                            cluster or "—",
+                            result or "—",
+                        ]
+                    )
 
             csv_content = output.getvalue()
             output.close()
@@ -2067,7 +2013,7 @@ def register_admin_participant_handlers(dp: Dispatcher, bot: Bot, admin_id: int)
             moscow_timezone = pytz.timezone("Europe/Moscow")
             moscow_now = datetime.now(moscow_timezone)
             timestamp = moscow_now.strftime("%Y%m%d_%H%M%S")
-            filename = f"beer_mile_export_{timestamp}.csv"
+            filename = f"participants_{timestamp}.csv"
 
             logger.info(
                 f"CSV-файл сформирован, размер: {len(csv_content)} символов, разделитель: {delimiter}"
@@ -2080,17 +2026,13 @@ def register_admin_participant_handlers(dp: Dispatcher, bot: Bot, admin_id: int)
 
             # Statistics message
             stats_text = f"✅ <b>Экспорт завершён</b>\n\n"
-            stats_text += f"📊 Экспортировано данных:\n"
-            stats_text += f"• Участников: {len(participants)}\n"
-            stats_text += f"• Незавершённых регистраций: {len(pending_users)}\n"
-            stats_text += f"• В очереди ожидания: {len(waitlist_data)}\n"
-            try:
-                from database import get_all_bot_users
-
-                bot_users = get_all_bot_users()
-                stats_text += f"• Пользователей бота: {len(bot_users)}\n"
-            except:
-                stats_text += f"• Пользователей бота: н/д\n"
+            stats_text += f"📊 Экспортировано участников: {len(participants)}\n"
+            if has_categories:
+                stats_text += f"📂 С группировкой по категориям"
+                if has_clusters:
+                    stats_text += " и кластерам"
+            else:
+                stats_text += f"📅 С сортировкой по дате регистрации"
 
             await message.answer(stats_text)
             logger.info(
@@ -3046,10 +2988,13 @@ def register_admin_participant_handlers(dp: Dispatcher, bot: Bot, admin_id: int)
             if current_chunk.strip():
                 chunks.append(current_chunk.rstrip())
 
-            for chunk in chunks:
-                await event.message.answer(chunk)
+            for i, chunk in enumerate(chunks):
+                if i == len(chunks) - 1:  # Last chunk
+                    await event.message.answer(chunk, reply_markup=create_back_keyboard("category_race"))
+                else:
+                    await event.message.answer(chunk)
         else:
-            await event.message.answer(text)
+            await event.message.answer(text, reply_markup=create_back_keyboard("category_race"))
 
     async def process_gender_protocol(callback_query: CallbackQuery, state: FSMContext):
         """Show protocol by gender with beautiful formatting"""
@@ -3239,10 +3184,13 @@ def register_admin_participant_handlers(dp: Dispatcher, bot: Bot, admin_id: int)
             if current_chunk.strip():
                 chunks.append(current_chunk.rstrip())
 
-            for chunk in chunks:
-                await callback_query.message.answer(chunk)
+            for i, chunk in enumerate(chunks):
+                if i == len(chunks) - 1:  # Last chunk
+                    await callback_query.message.answer(chunk, reply_markup=create_back_keyboard("category_race"))
+                else:
+                    await callback_query.message.answer(chunk)
         else:
-            await callback_query.message.answer(text)
+            await callback_query.message.answer(text, reply_markup=create_back_keyboard("category_race"))
 
         await state.clear()
         await callback_query.answer()
@@ -3798,6 +3746,13 @@ def register_admin_participant_handlers(dp: Dispatcher, bot: Bot, admin_id: int)
                     msg_text += f"👤 Привет, <b>{name}</b>!\n\n"
                     msg_text += f"🏷 <b>Ваш номер для забега: {bib_number}</b>\n\n"
 
+                    # Get bib number description if exists
+                    from database import get_bib_number_description
+
+                    bib_description = get_bib_number_description(bib_number)
+                    if bib_description:
+                        msg_text += f"📋 <b>Информация о номере:</b>\n{bib_description}\n\n"
+
                     # Add category/cluster info if available
                     if category:
                         category_emoji = {
@@ -4058,99 +4013,64 @@ def register_admin_participant_handlers(dp: Dispatcher, bot: Bot, admin_id: int)
                         except:
                             return (3, 0)
 
-                # Sort all runners in category to get overall ranking
+                # Sort all runners in category by result
                 sorted_cat_runners = sorted(cat_runners, key=sort_key)
 
-                # Create mapping of runner to their overall place in category
-                runner_places = {}
-                place = 1
+                # Separate runners by result type
+                finishers = []
+                dnf_runners = []
+                no_result_runners = []
+
                 for runner in sorted_cat_runners:
                     result = runner[8] or ""
-                    if result != "DNF" and result != "" and result != "—":
-                        runner_places[runner[0]] = place  # user_id is index 0
-                        place += 1
+                    if result == "DNF":
+                        dnf_runners.append(runner)
+                    elif result == "" or result == "—":
+                        no_result_runners.append(runner)
+                    else:
+                        finishers.append(runner)
 
-                # Group by clusters within category
-                clusters = {}
-                for runner in cat_runners:
-                    cluster = runner[6] or "Без кластера"
-                    if cluster not in clusters:
-                        clusters[cluster] = []
-                    clusters[cluster].append(runner)
+                # Display finishers with medals for top 3
+                place = 1
+                for runner in finishers:
+                    name = runner[2]
+                    result = runner[8]
+                    bib_number = runner[9] if len(runner) > 9 else None
 
-                # Sort clusters
-                cluster_order = ['A', 'B', 'C', 'D', 'E', 'F', 'G', 'Без кластера']
-                sorted_clusters = sorted(
-                    clusters.keys(),
-                    key=lambda x: cluster_order.index(x) if x in cluster_order else 999
-                )
+                    # Add medal emoji for top 3 in category
+                    medal = ""
+                    if place == 1:
+                        medal = "🥇 "
+                    elif place == 2:
+                        medal = "🥈 "
+                    elif place == 3:
+                        medal = "🥉 "
 
-                for cluster_name in sorted_clusters:
-                    cluster_runners = clusters[cluster_name]
+                    protocol_text += f"   {medal}{place}. {name}"
+                    if bib_number:
+                        protocol_text += f" (№{bib_number})"
+                    protocol_text += f" - {result}\n"
+                    place += 1
 
-                    # Show cluster header
-                    if cluster_name != "Без кластера":
-                        protocol_text += f"\n📍 <b>Кластер {cluster_name}</b>\n"
+                # Display DNF runners at the end
+                for runner in dnf_runners:
+                    name = runner[2]
+                    bib_number = runner[9] if len(runner) > 9 else None
 
-                    # Sort runners within cluster
-                    sorted_runners = sorted(cluster_runners, key=sort_key)
+                    protocol_text += f"   DNF. {name}"
+                    if bib_number:
+                        protocol_text += f" (№{bib_number})"
+                    protocol_text += " - DNF\n"
 
-                    # Separate runners by result type
-                    finishers = []
-                    dnf_runners = []
-                    no_result_runners = []
+                # Display runners without results
+                for runner in no_result_runners:
+                    name = runner[2]
+                    bib_number = runner[9] if len(runner) > 9 else None
 
-                    for runner in sorted_runners:
-                        result = runner[8] or ""
-                        if result == "DNF":
-                            dnf_runners.append(runner)
-                        elif result == "" or result == "—":
-                            no_result_runners.append(runner)
-                        else:
-                            finishers.append(runner)
-
-                    # Display finishers with their overall category place and medals for top 3
-                    for runner in finishers:
-                        name = runner[2]
-                        result = runner[8]
-                        bib_number = runner[9] if len(runner) > 9 else None
-                        user_id = runner[0]
-
-                        overall_place = runner_places.get(user_id, 0)
-
-                        # Add medal emoji for top 3 in category
-                        medal = ""
-                        if overall_place == 1:
-                            medal = "🥇 "
-                        elif overall_place == 2:
-                            medal = "🥈 "
-                        elif overall_place == 3:
-                            medal = "🥉 "
-
-                        protocol_text += f"   {medal}{overall_place}. {name}"
-                        if bib_number:
-                            protocol_text += f" (№{bib_number})"
-                        protocol_text += f" - {result}\n"
-
-                    # Display DNF runners at the end
-                    for runner in dnf_runners:
-                        name = runner[2]
-                        bib_number = runner[9] if len(runner) > 9 else None
-
-                        protocol_text += f"   DNF. {name}"
-                        if bib_number:
-                            protocol_text += f" (№{bib_number})"
-                        protocol_text += " - DNF\n"
-
-                    # Display runners without results
-                    for runner in no_result_runners:
-                        name = runner[2]
-                        bib_number = runner[9] if len(runner) > 9 else None
-
-                        protocol_text += f"   —. {name}"
-                        if bib_number:
-                            protocol_text += f" (№{bib_number})"
-                        protocol_text += " - —\n"
+                    protocol_text += f"   —. {name}"
+                    if bib_number:
+                        protocol_text += f" (№{bib_number})"
+                    protocol_text += " - —\n"
 
                 protocol_text += "\n"
 
@@ -4170,13 +4090,283 @@ def register_admin_participant_handlers(dp: Dispatcher, bot: Bot, admin_id: int)
                 if current_chunk:
                     chunks.append(current_chunk)
 
-                for chunk in chunks:
-                    await event.message.answer(chunk)
+                for i, chunk in enumerate(chunks):
+                    if i == len(chunks) - 1:  # Last chunk
+                        await event.message.answer(chunk, reply_markup=create_back_keyboard("category_race"))
+                    else:
+                        await event.message.answer(chunk)
             else:
-                await event.message.answer(protocol_text)
+                await event.message.answer(protocol_text, reply_markup=create_back_keyboard("category_race"))
 
         except Exception as e:
             logger.error(f"Ошибка при формировании протокола по категориям: {e}")
-            await event.message.answer("❌ Произошла ошибка при формировании протокола")
+            await event.message.answer("❌ Произошла ошибка при формировании протокола", reply_markup=create_back_keyboard("category_race"))
+
+    @dp.callback_query(F.data == "admin_upload_bib_info")
+    async def start_bib_info_upload(callback_query: CallbackQuery, state: FSMContext):
+        """Start bib number info upload process"""
+        user_id = callback_query.from_user.id
+        if user_id != admin_id:
+            await callback_query.answer("❌ Доступ запрещен")
+            return
+
+        await callback_query.message.delete()
+        await callback_query.answer()
+
+        text = "📋 <b>Загрузка информации о номерах</b>\n\n"
+        text += "Отправьте файл в формате .xlsx или .csv со следующей структурой:\n"
+        text += "• <b>Столбец 1:</b> Номер\n"
+        text += "• <b>Столбец 2:</b> Описание\n\n"
+        text += "ℹ️ Загруженные данные будут отправляться участникам при присвоении номеров."
+
+        await callback_query.message.answer(text)
+        await state.set_state(RegistrationForm.waiting_for_bib_info_file)
+
+    @dp.message(RegistrationForm.waiting_for_bib_info_file)
+    async def process_bib_info_file(message: Message, state: FSMContext):
+        """Process uploaded bib info file"""
+        if message.from_user.id != admin_id:
+            return
+
+        # Check if document is attached
+        if not message.document:
+            await message.answer(
+                "❌ Пожалуйста, отправьте файл в формате .xlsx или .csv"
+            )
+            return
+
+        # Check file extension
+        filename = message.document.file_name
+        if not (filename.endswith('.xlsx') or filename.endswith('.csv')):
+            await message.answer(
+                "❌ Неподдерживаемый формат файла. Используйте .xlsx или .csv"
+            )
+            return
+
+        try:
+            # Download the file
+            file = await bot.get_file(message.document.file_id)
+            file_path = file.file_path
+
+            # Download file content
+            file_bytes = await bot.download_file(file_path)
+
+            # Parse file based on extension
+            bib_data = []
+
+            if filename.endswith('.xlsx'):
+                # Parse Excel file
+                import openpyxl
+                from io import BytesIO
+
+                workbook = openpyxl.load_workbook(BytesIO(file_bytes.read()))
+                sheet = workbook.active
+                logger.info(f"XLSX файл загружен, активный лист: {sheet.title}")
+
+                skipped_rows = 0
+                total_rows = 0
+                for idx, row in enumerate(sheet.iter_rows(min_row=1, values_only=True), start=1):
+                    total_rows += 1
+                    # Skip completely empty rows
+                    if not any(row):
+                        continue
+
+                    # Check if we have at least 2 columns
+                    if len(row) < 2:
+                        continue
+
+                    # Get values and strip whitespace
+                    bib_number = str(row[0]).strip() if row[0] else ''
+                    description = str(row[1]).strip() if row[1] else ''
+
+                    # Remove BOM character if present (UTF-8 BOM: \ufeff)
+                    bib_number = bib_number.lstrip('\ufeff')
+
+                    # Детальное логирование первых строк
+                    if total_rows <= 5:
+                        logger.info(f"XLSX Строка {idx}: номер='{bib_number}', описание='{description[:30]}...'")
+
+                    # Skip if either field is empty after stripping
+                    if not bib_number or not description:
+                        continue
+
+                    # Validate that bib_number contains only digits (with possible decimal separators)
+                    if not bib_number.replace('.', '').replace(',', '').isdigit():
+                        skipped_rows += 1
+                        logger.warning(f"Строка {idx}: номер '{bib_number}' содержит не только цифры - пропуск")
+                        continue
+
+                    # Remove decimal point if present (Excel sometimes adds .0)
+                    bib_number = bib_number.replace('.0', '').replace(',0', '')
+
+                    # Final validation
+                    if bib_number and description:
+                        bib_data.append((bib_number, description))
+                        if len(bib_data) <= 3:  # Логируем первые 3 добавленные записи
+                            logger.info(f"✅ XLSX Строка {idx}: добавлен номер '{bib_number}' с описанием '{description[:50]}...'")
+
+                logger.info(f"XLSX парсинг завершен: всего строк={total_rows}, добавлено={len(bib_data)}, пропущено={skipped_rows}")
+
+            elif filename.endswith('.csv'):
+                # Parse CSV file
+                import csv
+                from io import StringIO
+
+                # Try different encodings
+                encodings = ['utf-8', 'utf-8-sig', 'cp1251', 'windows-1251']
+                content = None
+
+                for encoding in encodings:
+                    try:
+                        file_bytes.seek(0)
+                        content = file_bytes.read().decode(encoding)
+                        break
+                    except UnicodeDecodeError:
+                        continue
+
+                if not content:
+                    await message.answer("❌ Не удалось прочитать файл. Проверьте кодировку.")
+                    await state.clear()
+                    return
+
+                logger.info(f"CSV файл прочитан, размер: {len(content)} символов")
+
+                # Try different delimiters - приоритет точке с запятой
+                delimiters = [';', ',', '\t']
+                best_delimiter = ';'
+                best_score = 0
+
+                # Detect delimiter by checking first 10 rows
+                for delimiter in delimiters:
+                    test_reader = csv.reader(StringIO(content), delimiter=delimiter)
+                    valid_rows = 0
+
+                    for i, row in enumerate(test_reader):
+                        if i >= 10:  # Check first 10 rows
+                            break
+                        # Count rows with exactly 2 non-empty columns
+                        if len(row) == 2 and row[0] and row[1]:
+                            valid_rows += 1
+
+                    logger.info(f"Разделитель '{delimiter}': {valid_rows} валидных строк из первых 10")
+
+                    if valid_rows > best_score:
+                        best_score = valid_rows
+                        best_delimiter = delimiter
+
+                logger.info(f"Выбран разделитель: '{best_delimiter}' (валидных строк: {best_score})")
+
+                # Parse CSV with detected delimiter
+                csv_reader = csv.reader(StringIO(content), delimiter=best_delimiter)
+                skipped_rows = 0
+                total_rows = 0
+
+                for idx, row in enumerate(csv_reader, start=1):
+                    total_rows += 1
+
+                    # Skip completely empty rows
+                    if not row or not any(row):
+                        continue
+
+                    # Check if we have at least 2 columns
+                    if len(row) < 2:
+                        if total_rows <= 5:  # Логируем первые 5 строк для отладки
+                            logger.warning(f"Строка {idx}: меньше 2 столбцов (длина={len(row)})")
+                        continue
+
+                    # Get values and strip whitespace
+                    bib_number = str(row[0]).strip() if row[0] else ''
+                    description = str(row[1]).strip() if row[1] else ''
+
+                    # Remove BOM character if present (UTF-8 BOM: \ufeff)
+                    bib_number = bib_number.lstrip('\ufeff')
+
+                    # Детальное логирование первых строк
+                    if total_rows <= 5:
+                        logger.info(f"Строка {idx}: номер='{bib_number}', описание='{description[:30]}...'")
+
+                    # Skip if either field is empty after stripping
+                    if not bib_number or not description:
+                        continue
+
+                    # Validate that bib_number contains only digits (with possible decimal separators)
+                    if not bib_number.replace('.', '').replace(',', '').isdigit():
+                        skipped_rows += 1
+                        logger.warning(f"Строка {idx}: номер '{bib_number}' содержит не только цифры - пропуск")
+                        continue
+
+                    # Remove decimal point if present (Excel sometimes adds .0)
+                    bib_number = bib_number.replace('.0', '').replace(',0', '')
+
+                    # Final validation
+                    if bib_number and description:
+                        bib_data.append((bib_number, description))
+                        if len(bib_data) <= 3:  # Логируем первые 3 добавленные записи
+                            logger.info(f"✅ Строка {idx}: добавлен номер '{bib_number}' с описанием '{description[:50]}...'")
+
+                logger.info(f"CSV парсинг завершен: всего строк={total_rows}, добавлено={len(bib_data)}, пропущено={skipped_rows}")
+
+            if not bib_data:
+                await message.answer(
+                    "❌ Не найдено данных в файле. Убедитесь, что файл содержит номера и описания."
+                )
+                await state.clear()
+                return
+
+            # Get existing bib numbers to track updates
+            from database import add_bib_number_info, get_all_bib_numbers_info
+            from .utils import create_race_category_keyboard
+
+            existing_bibs = get_all_bib_numbers_info()
+            existing_bib_numbers = {bib[0] for bib in existing_bibs}
+
+            # Add or update bib info without clearing old data
+            new_count = 0
+            updated_count = 0
+            failed_count = 0
+
+            for bib_number, description in bib_data:
+                if add_bib_number_info(bib_number, description):
+                    if bib_number in existing_bib_numbers:
+                        updated_count += 1
+                    else:
+                        new_count += 1
+                else:
+                    failed_count += 1
+                    logger.error(f"Не удалось добавить номер {bib_number} в БД")
+
+            # Show success message
+            text = f"✅ <b>Информация о номерах загружена</b>\n\n"
+            text += f"📊 <b>Статистика:</b>\n"
+            text += f"• Обработано строк в файле: {len(bib_data)}\n"
+            text += f"• Новых записей: {new_count}\n"
+            text += f"• Обновлено записей: {updated_count}\n"
+            if failed_count > 0:
+                text += f"• ❌ Ошибок при добавлении: {failed_count}\n"
+            text += f"• Всего в базе: {len(existing_bib_numbers) + new_count}\n\n"
+            text += f"📋 При присвоении номеров участникам будет отправляться соответствующее описание.\n\n"
+            text += f"💡 Проверьте логи для подробной информации о каждой строке."
+
+            await message.answer(text, reply_markup=create_race_category_keyboard())
+            await state.clear()
+
+            logger.info(f"Загружено информации о номерах: {new_count} новых, {updated_count} обновлено")
+
+        except ImportError as e:
+            logger.error(f"Отсутствует необходимая библиотека: {e}")
+            await message.answer(
+                "❌ Ошибка: не установлена библиотека для обработки файлов.\n"
+                "Обратитесь к администратору системы."
+            )
+            await state.clear()
+
+        except Exception as e:
+            logger.error(f"Ошибка при обработке файла с информацией о номерах: {e}")
+            from .utils import create_race_category_keyboard
+            await message.answer(
+                f"❌ Ошибка при обработке файла: {str(e)}",
+                reply_markup=create_race_category_keyboard()
+            )
+            await state.clear()
 
     logger.info("Обработчики администрирования участников зарегистрированы")
