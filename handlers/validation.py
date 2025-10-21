@@ -202,31 +202,52 @@ def sanitize_input(input_str: str, max_length: int = 1000) -> str:
 
 def validate_result_format(result: str) -> Tuple[bool, Optional[str]]:
     """
-    Validate race result format (MM:SS time format only).
-    
+    Validate race result format (MM:SS,MS or MM:SS).
+    Supports both formats with and without milliseconds.
+
     Returns:
         Tuple[bool, Optional[str]]: (is_valid, error_message)
     """
     if not result:
         return False, "Результат не может быть пустым."
-    
+
     result = result.strip()
-    
+
+    # Pattern for MM:SS,MS format (e.g., 7:30,50 or 08:45,12)
+    pattern_mmss_ms = r'^([0-9]{1,2}):([0-5][0-9]),([0-9]{1,2})$'
     # Pattern for MM:SS format only (e.g., 7:30, 25:45)
     pattern_mmss = r'^([0-9]{1,2}):([0-5][0-9])$'
+
+    match_mmss_ms = re.match(pattern_mmss_ms, result)
     match_mmss = re.match(pattern_mmss, result)
-    
-    if match_mmss:
-        minutes = int(match_mmss.group(1))
-        seconds = int(match_mmss.group(2))
-        
+
+    if match_mmss_ms:
+        minutes = int(match_mmss_ms.group(1))
+        seconds = int(match_mmss_ms.group(2))
+        milliseconds = int(match_mmss_ms.group(3))
+
         # Reasonable constraints for beer mile (typically 4-20 minutes)
         if minutes < 4:
             return False, "Время должно быть больше 4 минут (4:00)."
-        
+
         if minutes > 30:
             return False, "Время не может быть больше 30 минут для пивной мили."
-        
+
+        if milliseconds > 99:
+            return False, "Миллисекунды не могут быть больше 99."
+
+        return True, None
+    elif match_mmss:
+        minutes = int(match_mmss.group(1))
+        seconds = int(match_mmss.group(2))
+
+        # Reasonable constraints for beer mile (typically 4-20 minutes)
+        if minutes < 4:
+            return False, "Время должно быть больше 4 минут (4:00)."
+
+        if minutes > 30:
+            return False, "Время не может быть больше 30 минут для пивной мили."
+
         return True, None
     else:
-        return False, "Неверный формат времени. Используйте формат ММ:СС (например, 7:30)."
+        return False, "Неверный формат времени. Используйте формат ММ:СС,МС (например, 08:45,50) или ММ:СС (например, 7:30)."

@@ -65,6 +65,10 @@ def register_cluster_handlers(dp: Dispatcher, bot: Bot, admin_id: int):
             )
             return
 
+        # Sort participants by registration date (reg_date is at index 4)
+        # Participant tuple: (user_id, username, name, target_time, reg_date, gender, category, cluster, ...)
+        participants = sorted(participants, key=lambda p: p[4] if p[4] else "")
+
         # Store participants list in state data
         await state.update_data(
             participants=participants, current_index=0, assignment_type="category"
@@ -96,6 +100,9 @@ def register_cluster_handlers(dp: Dispatcher, bot: Bot, admin_id: int):
             )
             return
 
+        # Sort participants by registration date (reg_date is at index 4)
+        participants = sorted(participants, key=lambda p: p[4] if p[4] else "")
+
         # Store participants list in state data
         await state.update_data(
             participants=participants, current_index=0, assignment_type="cluster"
@@ -122,7 +129,8 @@ def register_cluster_handlers(dp: Dispatcher, bot: Bot, admin_id: int):
             return
 
         participant = participants[current_index]
-        user_id, username, name, target_time, gender, category, cluster = participant
+        user_id, username, name, target_time, reg_date, gender, category = participant[:7]
+        cluster = participant[7] if len(participant) > 7 else None
 
         # Build participant info
         text = f"👤 <b>Участник {current_index + 1}/{len(participants)}</b>\n\n"
@@ -145,11 +153,11 @@ def register_cluster_handlers(dp: Dispatcher, bot: Bot, admin_id: int):
 
         if assignment_type == "category":
             text += "📝 <b>Выберите категорию для участника:</b>"
-            keyboard = create_category_selection_keyboard()
+            keyboard = create_category_selection_keyboard(current_index, len(participants))
             await state.set_state(RegistrationForm.waiting_for_category_assignment)
         else:  # cluster
             text += "🎯 <b>Выберите кластер для участника:</b>"
-            keyboard = create_cluster_selection_keyboard()
+            keyboard = create_cluster_selection_keyboard(current_index, len(participants))
             await state.set_state(RegistrationForm.waiting_for_cluster_assignment)
 
         await message.answer(text, reply_markup=keyboard)
@@ -161,6 +169,28 @@ def register_cluster_handlers(dp: Dispatcher, bot: Bot, admin_id: int):
         """Process category selection for participant"""
         if callback_query.from_user.id != admin_id:
             await callback_query.answer("❌ Доступ запрещен")
+            return
+
+        # Handle navigation buttons
+        if callback_query.data == "category_nav_previous":
+            await callback_query.answer()
+            data = await state.get_data()
+            current_index = data.get("current_index", 0)
+            if current_index > 0:
+                await state.update_data(current_index=current_index - 1)
+                await callback_query.message.delete()
+                await show_participant_for_assignment(callback_query.message, state, bot)
+            return
+
+        if callback_query.data == "category_nav_next":
+            await callback_query.answer()
+            data = await state.get_data()
+            participants = data.get("participants", [])
+            current_index = data.get("current_index", 0)
+            if current_index < len(participants) - 1:
+                await state.update_data(current_index=current_index + 1)
+                await callback_query.message.delete()
+                await show_participant_for_assignment(callback_query.message, state, bot)
             return
 
         await callback_query.answer()
@@ -184,7 +214,6 @@ def register_cluster_handlers(dp: Dispatcher, bot: Bot, admin_id: int):
             "classic": "Классика",
             "women": "Женский",
             "team": "Команда",
-            "skip": None,
         }
 
         selected_category = category_map.get(category_data)
@@ -198,10 +227,17 @@ def register_cluster_handlers(dp: Dispatcher, bot: Bot, admin_id: int):
                 )
                 return
 
-        # Move to next participant
-        await state.update_data(current_index=current_index + 1)
-        await callback_query.message.delete()
-        await show_participant_for_assignment(callback_query.message, state, bot)
+            # Show success message briefly
+            await callback_query.answer(f"✅ Категория {selected_category} сохранена", show_alert=False)
+
+            # Update participant data in state to reflect the change
+            participants[current_index] = list(participants[current_index])
+            participants[current_index][6] = selected_category  # Update category field
+            await state.update_data(participants=participants)
+
+            # Refresh the message to show updated category
+            await callback_query.message.delete()
+            await show_participant_for_assignment(callback_query.message, state, bot)
 
     @dp.callback_query(F.data.startswith("cluster_"))
     async def process_cluster_selection(
@@ -210,6 +246,28 @@ def register_cluster_handlers(dp: Dispatcher, bot: Bot, admin_id: int):
         """Process cluster selection for participant"""
         if callback_query.from_user.id != admin_id:
             await callback_query.answer("❌ Доступ запрещен")
+            return
+
+        # Handle navigation buttons
+        if callback_query.data == "cluster_nav_previous":
+            await callback_query.answer()
+            data = await state.get_data()
+            current_index = data.get("current_index", 0)
+            if current_index > 0:
+                await state.update_data(current_index=current_index - 1)
+                await callback_query.message.delete()
+                await show_participant_for_assignment(callback_query.message, state, bot)
+            return
+
+        if callback_query.data == "cluster_nav_next":
+            await callback_query.answer()
+            data = await state.get_data()
+            participants = data.get("participants", [])
+            current_index = data.get("current_index", 0)
+            if current_index < len(participants) - 1:
+                await state.update_data(current_index=current_index + 1)
+                await callback_query.message.delete()
+                await show_participant_for_assignment(callback_query.message, state, bot)
             return
 
         await callback_query.answer()
@@ -227,10 +285,7 @@ def register_cluster_handlers(dp: Dispatcher, bot: Bot, admin_id: int):
 
         # Get selected cluster
         cluster_data = callback_query.data.replace("cluster_", "")
-        if cluster_data == "skip":
-            selected_cluster = None
-        else:
-            selected_cluster = cluster_data
+        selected_cluster = cluster_data
 
         # Save cluster to database
         if selected_cluster:
@@ -241,10 +296,17 @@ def register_cluster_handlers(dp: Dispatcher, bot: Bot, admin_id: int):
                 )
                 return
 
-        # Move to next participant
-        await state.update_data(current_index=current_index + 1)
-        await callback_query.message.delete()
-        await show_participant_for_assignment(callback_query.message, state, bot)
+            # Show success message briefly
+            await callback_query.answer(f"✅ Кластер {selected_cluster} сохранён", show_alert=False)
+
+            # Update participant data in state to reflect the change
+            participants[current_index] = list(participants[current_index])
+            participants[current_index][7] = selected_cluster  # Update cluster field
+            await state.update_data(participants=participants)
+
+            # Refresh the message to show updated cluster
+            await callback_query.message.delete()
+            await show_participant_for_assignment(callback_query.message, state, bot)
 
     async def show_assignment_summary(
         message: Message, state: FSMContext, bot: Bot, assignment_type: str

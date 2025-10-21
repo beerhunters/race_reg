@@ -1650,12 +1650,12 @@ def get_participants_by_role(role: str = None) -> list:
             cursor = conn.cursor()
             if role:
                 cursor.execute(
-                    "SELECT user_id, username, name, target_time, gender, category, cluster FROM participants WHERE role = ? ORDER BY name ASC",
+                    "SELECT user_id, username, name, target_time, reg_date, gender, category, cluster FROM participants WHERE role = ? ORDER BY name ASC",
                     (role,),
                 )
             else:
                 cursor.execute(
-                    "SELECT user_id, username, name, target_time, gender, category, cluster FROM participants ORDER BY role = 'runner' DESC, name ASC"
+                    "SELECT user_id, username, name, target_time, reg_date, gender, category, cluster FROM participants ORDER BY role = 'runner' DESC, name ASC"
                 )
             return cursor.fetchall()
     except sqlite3.Error as e:

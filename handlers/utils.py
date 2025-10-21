@@ -68,6 +68,7 @@ class RegistrationForm(StatesGroup):
     waiting_for_results_start = State()
     waiting_for_participant_result = State()
     waiting_for_results_send_confirmation = State()
+    waiting_for_result_input = State()
 
     # Profile editing states
     waiting_for_edit_field_selection = State()
@@ -183,6 +184,11 @@ def create_protocol_keyboard():
                     text="🏆 По категориям", callback_data="protocol_by_category"
                 ),
             ],
+            [
+                InlineKeyboardButton(
+                    text="⬅️ Назад", callback_data="category_race"
+                ),
+            ],
         ]
     )
     return keyboard
@@ -270,7 +276,6 @@ def create_admin_commands_keyboard():
             text="📢 Уведомления", callback_data="category_notifications"
         ),
         InlineKeyboardButton(text="⚙️ Настройки", callback_data="category_settings"),
-        InlineKeyboardButton(text="🎨 Медиа", callback_data="category_media"),
         InlineKeyboardButton(
             text="💾 Резервные копии", callback_data="admin_backup_settings"
         ),
@@ -287,18 +292,19 @@ def create_participants_category_keyboard():
         InlineKeyboardButton(
             text="⏳ Незавершённые регистрации", callback_data="admin_pending"
         ),
-        InlineKeyboardButton(text="📊 Статистика", callback_data="admin_stats"),
-        InlineKeyboardButton(text="✅ Подтвердить оплату", callback_data="admin_paid"),
-        InlineKeyboardButton(text="🔢 Присвоить номер", callback_data="admin_set_bib"),
         InlineKeyboardButton(
-            text="📢 Уведомить о номерах", callback_data="admin_notify_bibs"
+            text="📋 Лист ожидания", callback_data="admin_waitlist"
         ),
+        InlineKeyboardButton(text="📊 Статистика", callback_data="admin_stats"),
+        InlineKeyboardButton(text="🔢 Присвоить номер", callback_data="admin_set_bib"),
+        InlineKeyboardButton(text="🎯 Кластеры", callback_data="admin_clusters"),
         InlineKeyboardButton(
             text="🏃 Записать результаты", callback_data="admin_results"
         ),
+        InlineKeyboardButton(
+            text="🏁 Уведомить о результатах", callback_data="admin_notify_results"
+        ),
         InlineKeyboardButton(text="🗑 Удалить участника", callback_data="admin_remove"),
-        InlineKeyboardButton(text="⬆️ Перевести из очереди", callback_data="admin_promote_from_waitlist"),
-        InlineKeyboardButton(text="⬇️ Перевести в очередь", callback_data="admin_demote_to_waitlist"),
         InlineKeyboardButton(text="📄 Экспорт в CSV", callback_data="admin_export"),
         InlineKeyboardButton(text="🏠 Главное меню", callback_data="main_menu"),
     ]
@@ -316,10 +322,6 @@ def create_race_category_keyboard():
             text="📂 Архивировать гонку", callback_data="admin_archive_race"
         ),
         InlineKeyboardButton(text="📈 Прошлые гонки", callback_data="admin_past_races"),
-        InlineKeyboardButton(
-            text="📋 Очередь ожидания", callback_data="admin_waitlist"
-        ),
-        InlineKeyboardButton(text="🎯 Кластеры", callback_data="admin_clusters"),
         InlineKeyboardButton(text="🏠 Главное меню", callback_data="main_menu"),
     ]
     return InlineKeyboardMarkup(inline_keyboard=[[cmd] for cmd in commands])
@@ -400,14 +402,6 @@ def create_settings_category_keyboard():
         InlineKeyboardButton(
             text="📍 Изменить место мероприятия", callback_data="admin_set_event_location"
         ),
-        InlineKeyboardButton(text="🏠 Главное меню", callback_data="main_menu"),
-    ]
-    return InlineKeyboardMarkup(inline_keyboard=[[cmd] for cmd in commands])
-
-
-def create_media_category_keyboard():
-    """Create media category keyboard"""
-    commands = [
         InlineKeyboardButton(
             text="ℹ️ Обновить информационное сообщение", callback_data="admin_info"
         ),
@@ -424,6 +418,11 @@ def create_media_category_keyboard():
         InlineKeyboardButton(text="🏠 Главное меню", callback_data="main_menu"),
     ]
     return InlineKeyboardMarkup(inline_keyboard=[[cmd] for cmd in commands])
+
+
+def create_media_category_keyboard():
+    """Create media category keyboard - deprecated, redirects to settings"""
+    return create_settings_category_keyboard()
 
 
 def get_participation_fee_text():
@@ -532,51 +531,89 @@ def create_clusters_category_keyboard():
     return keyboard
 
 
-def create_category_selection_keyboard():
-    """Create keyboard for category selection"""
-    keyboard = InlineKeyboardMarkup(
-        inline_keyboard=[
-            [
-                InlineKeyboardButton(text="💎 СуперЭлита", callback_data="category_superelite"),
-                InlineKeyboardButton(text="🥇 Элита", callback_data="category_elite"),
-            ],
-            [
-                InlineKeyboardButton(
-                    text="🏃 Классика", callback_data="category_classic"
-                ),
-                InlineKeyboardButton(text="👩 Женский", callback_data="category_women"),
-            ],
-            [
-                InlineKeyboardButton(text="👥 Команда", callback_data="category_team"),
-                InlineKeyboardButton(
-                    text="⏭️ Пропустить", callback_data="category_skip"
-                ),
-            ],
-        ]
-    )
+def create_category_selection_keyboard(current_index: int = 0, total_count: int = 1):
+    """Create keyboard for category selection with navigation"""
+    # Category selection buttons
+    buttons = [
+        [
+            InlineKeyboardButton(text="💎 СуперЭлита", callback_data="category_superelite"),
+            InlineKeyboardButton(text="🥇 Элита", callback_data="category_elite"),
+        ],
+        [
+            InlineKeyboardButton(
+                text="🏃 Классика", callback_data="category_classic"
+            ),
+            InlineKeyboardButton(text="👩 Женский", callback_data="category_women"),
+        ],
+        [
+            InlineKeyboardButton(text="👥 Команда", callback_data="category_team"),
+        ],
+    ]
+
+    # Navigation buttons
+    nav_buttons = []
+    if current_index > 0:
+        nav_buttons.append(
+            InlineKeyboardButton(text="⬅️ Предыдущий", callback_data="category_nav_previous")
+        )
+
+    if current_index < total_count - 1:
+        nav_buttons.append(
+            InlineKeyboardButton(text="Следующий ➡️", callback_data="category_nav_next")
+        )
+
+    if nav_buttons:
+        buttons.append(nav_buttons)
+
+    # Back button
+    buttons.append([
+        InlineKeyboardButton(text="🏠 Назад", callback_data="admin_clusters")
+    ])
+
+    keyboard = InlineKeyboardMarkup(inline_keyboard=buttons)
     return keyboard
 
 
-def create_cluster_selection_keyboard():
-    """Create keyboard for cluster selection"""
-    keyboard = InlineKeyboardMarkup(
-        inline_keyboard=[
-            [
-                InlineKeyboardButton(text="🅰️ Кластер A", callback_data="cluster_A"),
-                InlineKeyboardButton(text="🅱️ Кластер B", callback_data="cluster_B"),
-                InlineKeyboardButton(text="🅲 Кластер C", callback_data="cluster_C"),
-            ],
-            [
-                InlineKeyboardButton(text="🅳 Кластер D", callback_data="cluster_D"),
-                InlineKeyboardButton(text="🅴 Кластер E", callback_data="cluster_E"),
-                InlineKeyboardButton(text="🅵 Кластер F", callback_data="cluster_F"),
-            ],
-            [
-                InlineKeyboardButton(text="🅶 Кластер G", callback_data="cluster_G"),
-                InlineKeyboardButton(text="⏭️ Пропустить", callback_data="cluster_skip"),
-            ],
-        ]
-    )
+def create_cluster_selection_keyboard(current_index: int = 0, total_count: int = 1):
+    """Create keyboard for cluster selection with navigation"""
+    # Cluster selection buttons
+    buttons = [
+        [
+            InlineKeyboardButton(text="🅰️ Кластер A", callback_data="cluster_A"),
+            InlineKeyboardButton(text="🅱️ Кластер B", callback_data="cluster_B"),
+            InlineKeyboardButton(text="🅲 Кластер C", callback_data="cluster_C"),
+        ],
+        [
+            InlineKeyboardButton(text="🅳 Кластер D", callback_data="cluster_D"),
+            InlineKeyboardButton(text="🅴 Кластер E", callback_data="cluster_E"),
+            InlineKeyboardButton(text="🅵 Кластер F", callback_data="cluster_F"),
+        ],
+        [
+            InlineKeyboardButton(text="🅶 Кластер G", callback_data="cluster_G"),
+        ],
+    ]
+
+    # Navigation buttons
+    nav_buttons = []
+    if current_index > 0:
+        nav_buttons.append(
+            InlineKeyboardButton(text="⬅️ Предыдущий", callback_data="cluster_nav_previous")
+        )
+
+    if current_index < total_count - 1:
+        nav_buttons.append(
+            InlineKeyboardButton(text="Следующий ➡️", callback_data="cluster_nav_next")
+        )
+
+    if nav_buttons:
+        buttons.append(nav_buttons)
+
+    # Back button
+    buttons.append([
+        InlineKeyboardButton(text="🏠 Назад", callback_data="admin_clusters")
+    ])
+
+    keyboard = InlineKeyboardMarkup(inline_keyboard=buttons)
     return keyboard
 
 
@@ -643,6 +680,30 @@ def create_participation_confirmation_keyboard(user_id: int):
                 ),
                 InlineKeyboardButton(
                     text="❌ Нет, отказываюсь", callback_data=f"confirm_participation_no_{user_id}"
+                ),
+            ],
+        ]
+    )
+    return keyboard
+
+
+def create_waitlist_actions_keyboard():
+    """Create keyboard for waitlist actions"""
+    keyboard = InlineKeyboardMarkup(
+        inline_keyboard=[
+            [
+                InlineKeyboardButton(
+                    text="⬆️ Перевести из очереди", callback_data="admin_promote_from_waitlist"
+                ),
+            ],
+            [
+                InlineKeyboardButton(
+                    text="⬇️ Перевести в очередь", callback_data="admin_demote_to_waitlist"
+                ),
+            ],
+            [
+                InlineKeyboardButton(
+                    text="⬅️ Назад", callback_data="category_participants"
                 ),
             ],
         ]
