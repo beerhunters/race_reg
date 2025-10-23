@@ -103,15 +103,42 @@ def init_db():
                     "ALTER TABLE participants ADD COLUMN cluster TEXT DEFAULT NULL"
                 )
                 logger.info("Добавлен столбец cluster в таблицу participants")
+            if "team_name" not in participants_columns:
+                cursor.execute(
+                    "ALTER TABLE participants ADD COLUMN team_name TEXT DEFAULT NULL"
+                )
+                logger.info("Добавлен столбец team_name в таблицу participants")
+            if "team_invite_code" not in participants_columns:
+                cursor.execute(
+                    "ALTER TABLE participants ADD COLUMN team_invite_code TEXT DEFAULT NULL"
+                )
+                logger.info("Добавлен столбец team_invite_code в таблицу participants")
+
+            # Check and add team fields to waitlist table
+            cursor.execute("PRAGMA table_info(waitlist)")
+            waitlist_columns = [info[1] for info in cursor.fetchall()]
+            if "team_name" not in waitlist_columns:
+                cursor.execute(
+                    "ALTER TABLE waitlist ADD COLUMN team_name TEXT DEFAULT NULL"
+                )
+                logger.info("Добавлен столбец team_name в таблицу waitlist")
+            if "team_invite_code" not in waitlist_columns:
+                cursor.execute(
+                    "ALTER TABLE waitlist ADD COLUMN team_invite_code TEXT DEFAULT NULL"
+                )
+                logger.info("Добавлен столбец team_invite_code в таблицу waitlist")
+
             cursor.execute(
-                "SELECT key FROM settings WHERE key IN ('max_runners', 'max_volunteers')"
+                "SELECT key FROM settings WHERE key IN ('max_runners', 'max_volunteers', 'team_mode_enabled')"
             )
             columns = [info[0] for info in cursor.fetchall()]
-            expected_columns = ["max_runners", "max_volunteers"]
+            expected_columns = ["max_runners", "max_volunteers", "team_mode_enabled"]
             missing_columns = [col for col in expected_columns if col not in columns]
             for col in missing_columns:
+                # Default values: max_runners=100, max_volunteers=100, team_mode_enabled=1 (enabled)
+                default_value = 1 if col == "team_mode_enabled" else 100
                 cursor.execute(
-                    "INSERT INTO settings (key, value) VALUES (?, ?)", (col, 100)
+                    "INSERT INTO settings (key, value) VALUES (?, ?)", (col, default_value)
                 )
 
             # Create bot_users table for tracking all users who interacted with bot
@@ -485,6 +512,40 @@ def add_participant(
         return False
 
 
+def add_participant_with_team(
+    user_id: int, username: str, name: str, target_time: str, role: str, gender: str,
+    team_name: str, team_invite_code: str
+):
+    """Add participant with team registration (auto-assigns 'Команда' category)"""
+    try:
+        with sqlite3.connect(DB_PATH) as conn:
+            cursor = conn.cursor()
+            cursor.execute(
+                """
+                INSERT INTO participants
+                (user_id, username, name, target_time, role, reg_date, payment_status, gender, category, team_name, team_invite_code)
+                VALUES (?, ?, ?, ?, ?, datetime('now'), ?, ?, 'Команда', ?, ?)
+                """,
+                (
+                    user_id,
+                    username,
+                    name,
+                    target_time,
+                    role,
+                    "pending" if role == "runner" else "-",
+                    gender,
+                    team_name,
+                    team_invite_code,
+                ),
+            )
+            conn.commit()
+            logger.info(f"Участник команды добавлен: {name}, команда: {team_name}, user_id={user_id}")
+            return True
+    except sqlite3.Error as e:
+        logger.error(f"Ошибка при добавлении участника команды user_id={user_id}: {e}")
+        return False
+
+
 def get_setting(key: str):
     try:
         conn = sqlite3.connect(DB_PATH)
@@ -785,7 +846,8 @@ def reject_edit_request(request_id: int) -> bool:
 
 
 def add_to_waitlist(
-    user_id: int, username: str, name: str, target_time: str, role: str, gender: str
+    user_id: int, username: str, name: str, target_time: str, role: str, gender: str,
+    team_name: str = None, team_invite_code: str = None
 ) -> bool:
     """Add user to waitlist when regular slots are full"""
     try:
@@ -793,10 +855,10 @@ def add_to_waitlist(
             cursor = conn.cursor()
             cursor.execute(
                 """
-                INSERT INTO waitlist (user_id, username, name, target_time, role, gender, join_date)
-                VALUES (?, ?, ?, ?, ?, ?, datetime('now'))
+                INSERT INTO waitlist (user_id, username, name, target_time, role, gender, join_date, team_name, team_invite_code)
+                VALUES (?, ?, ?, ?, ?, ?, datetime('now'), ?, ?)
                 """,
-                (user_id, username, name, target_time, role, gender),
+                (user_id, username, name, target_time, role, gender, team_name, team_invite_code),
             )
             conn.commit()
             logger.info(
@@ -1660,12 +1722,12 @@ def get_participants_by_role(role: str = None) -> list:
             cursor = conn.cursor()
             if role:
                 cursor.execute(
-                    "SELECT user_id, username, name, target_time, reg_date, gender, category, cluster FROM participants WHERE role = ? ORDER BY name ASC",
+                    "SELECT user_id, username, name, target_time, reg_date, gender, category, cluster, team_name, team_invite_code FROM participants WHERE role = ? ORDER BY name ASC",
                     (role,),
                 )
             else:
                 cursor.execute(
-                    "SELECT user_id, username, name, target_time, reg_date, gender, category, cluster FROM participants ORDER BY role = 'runner' DESC, name ASC"
+                    "SELECT user_id, username, name, target_time, reg_date, gender, category, cluster, team_name, team_invite_code FROM participants ORDER BY role = 'runner' DESC, name ASC"
                 )
             return cursor.fetchall()
     except sqlite3.Error as e:
@@ -1680,7 +1742,7 @@ def get_participants_with_categories() -> list:
             cursor = conn.cursor()
             cursor.execute(
                 """
-                SELECT user_id, username, name, target_time, gender, category, cluster, role, result, bib_number
+                SELECT user_id, username, name, target_time, gender, category, cluster, role, result, bib_number, team_name, team_invite_code
                 FROM participants
                 ORDER BY role = 'runner' DESC,
                          CASE category
@@ -1714,7 +1776,7 @@ def get_participants_for_excel_export() -> list:
             cursor = conn.cursor()
             cursor.execute(
                 """
-                SELECT name, username, target_time, bib_number, category, cluster, result
+                SELECT name, username, target_time, bib_number, category, cluster, result, team_name, team_invite_code
                 FROM participants
                 WHERE role = 'runner'
                 ORDER BY
@@ -1777,26 +1839,26 @@ def promote_waitlist_user_by_id(user_id: int) -> dict:
     try:
         with sqlite3.connect(DB_PATH, timeout=10) as conn:
             cursor = conn.cursor()
-            
-            # Get user data from waitlist
+
+            # Get user data from waitlist including team info
             cursor.execute(
                 """
-                SELECT username, name, target_time, role, gender
+                SELECT username, name, target_time, role, gender, team_name, team_invite_code
                 FROM waitlist WHERE user_id = ?
                 """,
                 (user_id,)
             )
             user_data = cursor.fetchone()
-            
+
             if not user_data:
                 return {"success": False, "error": "Пользователь не найден в списке ожидания"}
-            
-            username, name, target_time, role, gender = user_data
-            
+
+            username, name, target_time, role, gender, team_name, team_invite_code = user_data
+
             # Get current participant count and limit for this role
             current_count = get_participant_count_by_role(role)
             current_limit = get_setting(f"max_{role}s")  # max_runners or max_volunteers
-            
+
             if current_limit is None:
                 current_limit = 0
             else:
@@ -1804,41 +1866,139 @@ def promote_waitlist_user_by_id(user_id: int) -> dict:
                     current_limit = int(current_limit)
                 except (ValueError, TypeError):
                     current_limit = 0
-            
-            # Calculate new limit (current participants + 1)
-            new_limit = current_count + 1
-            
+
+            # Check if there's a second team member in waitlist
+            second_member_data = None
+            second_member_promoted = False
+            second_member_name = None
+            second_member_user_id = None
+
+            if team_name:
+                second_member_data = get_team_member_in_waitlist(team_name, user_id)
+
+            # Calculate new limit (account for both members if second exists)
+            members_to_promote = 2 if second_member_data else 1
+            new_limit = current_count + members_to_promote
+
             # If new limit is greater than current limit, update the limit
             if new_limit > current_limit:
-                success = set_setting(f"max_{role}s", new_limit)
-                if not success:
-                    return {"success": False, "error": "Ошибка при обновлении лимита"}
+                cursor.execute(
+                    "INSERT OR REPLACE INTO settings (key, value) VALUES (?, ?)",
+                    (f"max_{role}s", str(new_limit))
+                )
                 logger.info(f"Лимит {role}s увеличен с {current_limit} до {new_limit}")
-            
-            # Add user to participants
-            success = add_participant(user_id, username, name, target_time, role, gender)
-            
-            if not success:
-                return {"success": False, "error": "Ошибка при добавлении в участники"}
-            
+
+            # Add first user to participants (directly via cursor to avoid database lock)
+            if team_name:
+                # This is a team member - manually insert with "Команда" category
+                cursor.execute(
+                    """
+                    INSERT INTO participants
+                    (user_id, username, name, target_time, role, reg_date, payment_status, gender, category, team_name, team_invite_code)
+                    VALUES (?, ?, ?, ?, ?, datetime('now'), ?, ?, 'Команда', ?, ?)
+                    """,
+                    (
+                        user_id,
+                        username,
+                        name,
+                        target_time,
+                        role,
+                        "pending" if role == "runner" else "-",
+                        gender,
+                        team_name,
+                        team_invite_code,
+                    ),
+                )
+                logger.info(f"Участник команды '{team_name}' добавлен из waitlist: {name} (ID: {user_id})")
+            else:
+                # Regular participant
+                cursor.execute(
+                    """
+                    INSERT INTO participants
+                    (user_id, username, name, target_time, role, reg_date, payment_status, gender)
+                    VALUES (?, ?, ?, ?, ?, datetime('now'), ?, ?)
+                    """,
+                    (
+                        user_id,
+                        username,
+                        name,
+                        target_time,
+                        role,
+                        "pending" if role == "runner" else "-",
+                        gender,
+                    ),
+                )
+
             # Remove from waitlist
             cursor.execute("DELETE FROM waitlist WHERE user_id = ?", (user_id,))
-            
+
             # Remove from pending_registrations if exists
             cursor.execute("DELETE FROM pending_registrations WHERE user_id = ?", (user_id,))
-            
+
+            # If second team member exists, promote them too
+            if second_member_data:
+                (second_user_id, second_username, second_name, second_target_time,
+                 second_role, second_gender, second_team_invite_code) = second_member_data
+
+                # Add second member to participants (directly via cursor)
+                cursor.execute(
+                    """
+                    INSERT INTO participants
+                    (user_id, username, name, target_time, role, reg_date, payment_status, gender, category, team_name, team_invite_code)
+                    VALUES (?, ?, ?, ?, ?, datetime('now'), ?, ?, 'Команда', ?, ?)
+                    """,
+                    (
+                        second_user_id,
+                        second_username,
+                        second_name,
+                        second_target_time,
+                        second_role,
+                        "pending" if second_role == "runner" else "-",
+                        second_gender,
+                        team_name,
+                        second_team_invite_code,
+                    ),
+                )
+
+                # Remove second member from waitlist
+                cursor.execute("DELETE FROM waitlist WHERE user_id = ?", (second_user_id,))
+                cursor.execute("DELETE FROM pending_registrations WHERE user_id = ?", (second_user_id,))
+
+                second_member_promoted = True
+                second_member_name = second_name
+                second_member_user_id = second_user_id
+                second_member_username = second_username
+                second_member_target_time = second_target_time
+                second_member_role = second_role
+                second_member_gender = second_gender
+
+                logger.info(f"Второй участник команды '{team_name}' автоматически добавлен из waitlist: {second_name} (ID: {second_user_id})")
+            else:
+                second_member_username = None
+                second_member_target_time = None
+                second_member_role = None
+                second_member_gender = None
+
             conn.commit()
-            
+
             logger.info(f"Пользователь {name} (ID: {user_id}) переведен из очереди ожидания в участники. "
                        f"Лимит {role}s: {current_limit} -> {new_limit}")
-            
+
             return {
                 "success": True,
                 "user_name": name,
                 "user_id": user_id,
                 "role": role,
                 "old_limit": current_limit,
-                "new_limit": new_limit
+                "new_limit": new_limit,
+                "team_name": team_name,
+                "second_member_promoted": second_member_promoted,
+                "second_member_name": second_member_name,
+                "second_member_user_id": second_member_user_id,
+                "second_member_username": second_member_username,
+                "second_member_target_time": second_member_target_time,
+                "second_member_role": second_member_role,
+                "second_member_gender": second_member_gender
             }
             
     except sqlite3.Error as e:
@@ -2141,20 +2301,20 @@ def cancel_user_participation(user_id: int) -> dict:
         with sqlite3.connect(DB_PATH, timeout=10) as conn:
             cursor = conn.cursor()
 
-            # Check if user is in participants
+            # Check if user is in participants (включая team_name)
             cursor.execute(
                 """
-                SELECT username, name, target_time, role, gender
+                SELECT username, name, target_time, role, gender, team_name
                 FROM participants WHERE user_id = ?
                 """,
                 (user_id,)
             )
             participant_data = cursor.fetchone()
 
-            # Check if user is in waitlist
+            # Check if user is in waitlist (включая team_name)
             cursor.execute(
                 """
-                SELECT username, name, target_time, role, gender
+                SELECT username, name, target_time, role, gender, team_name
                 FROM waitlist WHERE user_id = ?
                 """,
                 (user_id,)
@@ -2165,9 +2325,33 @@ def cancel_user_participation(user_id: int) -> dict:
                 return {"success": False, "error": "Пользователь не найден ни в участниках, ни в очереди ожидания"}
 
             # Determine where user is located
+            team_partner_info = None
+
             if participant_data:
-                username, name, target_time, role, gender = participant_data
+                username, name, target_time, role, gender, team_name = participant_data
                 source = "participants"
+
+                # Ищем напарника по команде в participants
+                if team_name:
+                    cursor.execute(
+                        """
+                        SELECT user_id, username, name, team_invite_code
+                        FROM participants
+                        WHERE team_name = ? AND user_id != ?
+                        LIMIT 1
+                        """,
+                        (team_name, user_id)
+                    )
+                    partner_data = cursor.fetchone()
+                    if partner_data:
+                        team_partner_info = {
+                            "user_id": partner_data[0],
+                            "username": partner_data[1],
+                            "name": partner_data[2],
+                            "team_name": team_name,
+                            "source": "participants",
+                            "team_invite_code": partner_data[3]
+                        }
 
                 # Get current limit for this role
                 current_limit = get_setting(f"max_{role}s")  # max_runners or max_volunteers
@@ -2197,10 +2381,32 @@ def cancel_user_participation(user_id: int) -> dict:
                 cursor.execute("DELETE FROM participants WHERE user_id = ?", (user_id,))
 
             else:  # waitlist_data
-                username, name, target_time, role, gender = waitlist_data
+                username, name, target_time, role, gender, team_name = waitlist_data
                 source = "waitlist"
                 current_limit = None
                 new_limit = None
+
+                # Ищем напарника по команде в waitlist
+                if team_name:
+                    cursor.execute(
+                        """
+                        SELECT user_id, username, name, team_invite_code
+                        FROM waitlist
+                        WHERE team_name = ? AND user_id != ?
+                        LIMIT 1
+                        """,
+                        (team_name, user_id)
+                    )
+                    partner_data = cursor.fetchone()
+                    if partner_data:
+                        team_partner_info = {
+                            "user_id": partner_data[0],
+                            "username": partner_data[1],
+                            "name": partner_data[2],
+                            "team_name": team_name,
+                            "source": "waitlist",
+                            "team_invite_code": partner_data[3]
+                        }
 
                 # Remove from waitlist
                 cursor.execute("DELETE FROM waitlist WHERE user_id = ?", (user_id,))
@@ -2210,6 +2416,43 @@ def cancel_user_participation(user_id: int) -> dict:
                 "INSERT OR REPLACE INTO pending_registrations (user_id, username, name, target_time, role) VALUES (?, ?, ?, ?, ?)",
                 (user_id, username, name, target_time, role)
             )
+
+            # Если есть напарник по команде, проверяем и обновляем его team_invite_code
+            if team_partner_info:
+                partner_user_id = team_partner_info["user_id"]
+                partner_source = team_partner_info["source"]
+
+                # Проверяем, есть ли у напарника team_invite_code
+                if partner_source == "participants":
+                    cursor.execute(
+                        "SELECT team_invite_code FROM participants WHERE user_id = ?",
+                        (partner_user_id,)
+                    )
+                else:  # waitlist
+                    cursor.execute(
+                        "SELECT team_invite_code FROM waitlist WHERE user_id = ?",
+                        (partner_user_id,)
+                    )
+
+                partner_code = cursor.fetchone()
+
+                # Если кода нет или он пустой, генерируем новый
+                if not partner_code or not partner_code[0]:
+                    import secrets
+                    new_invite_code = secrets.token_urlsafe(12)
+
+                    if partner_source == "participants":
+                        cursor.execute(
+                            "UPDATE participants SET team_invite_code = ? WHERE user_id = ?",
+                            (new_invite_code, partner_user_id)
+                        )
+                    else:  # waitlist
+                        cursor.execute(
+                            "UPDATE waitlist SET team_invite_code = ? WHERE user_id = ?",
+                            (new_invite_code, partner_user_id)
+                        )
+
+                    logger.info(f"Создан новый team_invite_code для оставшегося участника команды {partner_user_id}")
 
             conn.commit()
 
@@ -2224,7 +2467,8 @@ def cancel_user_participation(user_id: int) -> dict:
                 "role": role,
                 "source": source,
                 "old_limit": current_limit,
-                "new_limit": new_limit
+                "new_limit": new_limit,
+                "team_partner": team_partner_info  # None если нет напарника
             }
 
     except sqlite3.Error as e:
@@ -2372,10 +2616,10 @@ def approve_slot_transfer(transfer_id: int) -> dict:
 
             original_user_id, original_name, new_user_id, new_username, new_name = transfer_data
 
-            # Get original participant data
+            # Get original participant data (including team info)
             cursor.execute(
                 """
-                SELECT target_time, role, gender, payment_status, bib_number, category, cluster
+                SELECT target_time, role, gender, payment_status, bib_number, category, cluster, team_name, team_invite_code
                 FROM participants WHERE user_id = ?
                 """,
                 (original_user_id,)
@@ -2385,19 +2629,19 @@ def approve_slot_transfer(transfer_id: int) -> dict:
             if not participant_data:
                 return {"success": False, "error": "Оригинальный участник не найден"}
 
-            target_time, role, gender, payment_status, bib_number, category, cluster = participant_data
+            target_time, role, gender, payment_status, bib_number, category, cluster, team_name, team_invite_code = participant_data
 
             # Delete original participant
             cursor.execute("DELETE FROM participants WHERE user_id = ?", (original_user_id,))
 
-            # Add new participant with same data (including payment status from original participant)
+            # Add new participant with same data (including team info)
             cursor.execute(
                 """
                 INSERT INTO participants
-                (user_id, username, name, target_time, role, reg_date, payment_status, bib_number, gender, category, cluster)
-                VALUES (?, ?, ?, ?, ?, datetime('now'), ?, ?, ?, ?, ?)
+                (user_id, username, name, target_time, role, reg_date, payment_status, bib_number, gender, category, cluster, team_name, team_invite_code)
+                VALUES (?, ?, ?, ?, ?, datetime('now'), ?, ?, ?, ?, ?, ?, ?)
                 """,
-                (new_user_id, new_username, new_name, target_time, role, payment_status, bib_number, gender, category, cluster)
+                (new_user_id, new_username, new_name, target_time, role, payment_status, bib_number, gender, category, cluster, team_name, team_invite_code)
             )
 
             # Update transfer status
@@ -2420,7 +2664,9 @@ def approve_slot_transfer(transfer_id: int) -> dict:
                 "original_name": original_name,
                 "new_user_id": new_user_id,
                 "new_name": new_name,
-                "role": role
+                "role": role,
+                "team_name": team_name,
+                "team_invite_code": team_invite_code
             }
 
     except sqlite3.Error as e:
@@ -2600,3 +2846,141 @@ def get_all_bib_numbers_info() -> list:
     except sqlite3.Error as e:
         logger.error(f"Ошибка при получении списка номеров с описаниями: {e}")
         return []
+
+
+# ============================================================================
+# TEAM INVITE CODE MANAGEMENT FUNCTIONS
+# ============================================================================
+
+
+def get_participant_by_team_invite_code(team_invite_code: str) -> tuple:
+    """Get participant who created the team by invite code - searches both participants and waitlist
+    Returns: (user_id, team_name, name, is_in_waitlist) or None"""
+    try:
+        with sqlite3.connect(DB_PATH) as conn:
+            cursor = conn.cursor()
+
+            # Сначала ищем в participants
+            cursor.execute(
+                "SELECT user_id, team_name, name FROM participants WHERE team_invite_code = ?",
+                (team_invite_code,)
+            )
+            result = cursor.fetchone()
+            if result:
+                return (result[0], result[1], result[2], False)  # False = не в листе ожидания
+
+            # Если не нашли в participants, ищем в waitlist
+            cursor.execute(
+                "SELECT user_id, team_name, name FROM waitlist WHERE team_invite_code = ?",
+                (team_invite_code,)
+            )
+            result = cursor.fetchone()
+            if result:
+                return (result[0], result[1], result[2], True)  # True = в листе ожидания
+
+            return None
+    except sqlite3.Error as e:
+        logger.error(f"Ошибка при получении участника по коду приглашения {team_invite_code}: {e}")
+        return None
+
+
+def count_team_members(team_name: str) -> int:
+    """Count participants in a team by team name"""
+    try:
+        with sqlite3.connect(DB_PATH) as conn:
+            cursor = conn.cursor()
+            cursor.execute(
+                "SELECT COUNT(*) FROM participants WHERE team_name = ? AND category = 'Команда'",
+                (team_name,)
+            )
+            count = cursor.fetchone()[0]
+            return count
+    except sqlite3.Error as e:
+        logger.error(f"Ошибка при подсчете членов команды {team_name}: {e}")
+        return 0
+
+
+def count_complete_teams() -> int:
+    """Count complete teams (teams with 2 members) in participants
+    Returns: number of complete teams"""
+    try:
+        with sqlite3.connect(DB_PATH) as conn:
+            cursor = conn.cursor()
+            # Подсчитываем команды с 2 участниками с категорией "Команда" и одинаковым названием
+            cursor.execute(
+                """SELECT team_name, COUNT(*) as member_count
+                   FROM participants
+                   WHERE category = 'Команда'
+                   AND team_name IS NOT NULL
+                   GROUP BY team_name
+                   HAVING COUNT(*) = 2"""
+            )
+            complete_teams = len(cursor.fetchall())
+            return complete_teams
+    except sqlite3.Error as e:
+        logger.error(f"Ошибка при подсчете полных команд: {e}")
+        return 0
+
+
+def get_teams_from_participants() -> list:
+    """Get all teams from participants table with category 'Команда'
+    Returns: list of tuples (team_name, member1_user_id, member1_name, member1_username,
+                             member2_user_id, member2_name, member2_username)"""
+    try:
+        with sqlite3.connect(DB_PATH) as conn:
+            cursor = conn.cursor()
+            # Получаем команды с 2 участниками
+            cursor.execute(
+                """SELECT team_name,
+                          GROUP_CONCAT(user_id) as user_ids,
+                          GROUP_CONCAT(name) as names,
+                          GROUP_CONCAT(username) as usernames
+                   FROM participants
+                   WHERE category = 'Команда'
+                   AND team_name IS NOT NULL
+                   GROUP BY team_name
+                   HAVING COUNT(*) = 2
+                   ORDER BY team_name ASC"""
+            )
+            raw_teams = cursor.fetchall()
+
+            # Преобразуем данные в удобный формат
+            teams = []
+            for team_name, user_ids, names, usernames in raw_teams:
+                ids = user_ids.split(',')
+                name_list = names.split(',')
+                username_list = usernames.split(',')
+
+                teams.append((
+                    team_name,
+                    int(ids[0]), name_list[0], username_list[0],
+                    int(ids[1]), name_list[1], username_list[1]
+                ))
+
+            return teams
+    except sqlite3.Error as e:
+        logger.error(f"Ошибка при получении команд из participants: {e}")
+        return []
+
+
+def get_team_member_in_waitlist(team_name: str, exclude_user_id: int) -> tuple:
+    """Get another team member from waitlist (excluding specified user_id)
+    Returns: (user_id, username, name, target_time, role, gender, team_invite_code) or None"""
+    try:
+        with sqlite3.connect(DB_PATH) as conn:
+            cursor = conn.cursor()
+            cursor.execute(
+                """SELECT user_id, username, name, target_time, role, gender, team_invite_code
+                   FROM waitlist
+                   WHERE team_name = ? AND user_id != ?
+                   LIMIT 1""",
+                (team_name, exclude_user_id)
+            )
+            result = cursor.fetchone()
+            if result:
+                logger.info(f"Найден второй участник команды '{team_name}' в листе ожидания: {result[2]} (ID: {result[0]})")
+                return result
+            return None
+    except sqlite3.Error as e:
+        logger.error(f"Ошибка при поиске второго участника команды {team_name} в waitlist: {e}")
+        return None

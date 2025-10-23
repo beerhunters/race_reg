@@ -300,6 +300,8 @@ def register_admin_participant_handlers(dp: Dispatcher, bot: Bot, admin_id: int)
                 gender,
                 category,
                 cluster,
+                team_name,
+                team_invite_code,
             ) = participant
 
             # Format payment status
@@ -1191,6 +1193,8 @@ def register_admin_participant_handlers(dp: Dispatcher, bot: Bot, admin_id: int)
                 gender,
                 category,
                 cluster,
+                team_name,
+                team_invite_code,
             ) = participant
 
             # Format bib number
@@ -1287,7 +1291,7 @@ def register_admin_participant_handlers(dp: Dispatcher, bot: Bot, admin_id: int)
         volunteers = []
 
         for participant in participants:
-            user_id_p, username, name, target_time, role, reg_date, payment_status, bib_number, result, gender, category, cluster = participant
+            user_id_p, username, name, target_time, role, reg_date, payment_status, bib_number, result, gender, category, cluster, team_name, team_invite_code = participant
 
             username_info = f"@{username}" if username else "—"
             payment_info = "✅ Оплачено" if payment_status == "paid" else "⏳ Ожидает оплаты"
@@ -1955,6 +1959,8 @@ def register_admin_participant_handlers(dp: Dispatcher, bot: Bot, admin_id: int)
                                 gender,
                                 category_p,
                                 cluster_p,
+                                team_name,
+                                team_invite_code,
                             ) = participant
 
                             writer.writerow(
@@ -1992,6 +1998,8 @@ def register_admin_participant_handlers(dp: Dispatcher, bot: Bot, admin_id: int)
                         gender,
                         category,
                         cluster,
+                        team_name,
+                        team_invite_code,
                     ) = participant
 
                     writer.writerow(
@@ -2163,6 +2171,8 @@ def register_admin_participant_handlers(dp: Dispatcher, bot: Bot, admin_id: int)
             gender,
             category,
             cluster,
+            team_name,
+            team_invite_code,
         ) = participant
 
         text = f"📝 <b>Запись результатов</b> ({index + 1}/{total})\n\n"
@@ -2933,6 +2943,47 @@ def register_admin_participant_handlers(dp: Dispatcher, bot: Bot, admin_id: int)
                         text += f"   📱 @{username}\n"
                     text += f"   👤 {gender or '—'}\n\n"
 
+        # Show teams
+        from database import get_teams_from_participants
+        teams = get_teams_from_participants()
+
+        if teams:
+            text += f"👥 <b>Команды ({len(teams)}):</b>\n\n"
+
+            team_place = 1
+            for team in teams:
+                team_name, member1_id, member1_name, member1_username, member2_id, member2_name, member2_username = team
+
+                # Get results for both members
+                from database import get_participant_by_user_id
+                member1_info = get_participant_by_user_id(member1_id)
+                member2_info = get_participant_by_user_id(member2_id)
+
+                member1_result = member1_info[8] if member1_info else None
+                member2_result = member2_info[8] if member2_info else None
+
+                # Check if team has results (both members finished)
+                if member1_result and member2_result and member1_result.upper() != "DNF" and member2_result.upper() != "DNF":
+                    medal_emoji = ""
+                    if team_place == 1:
+                        medal_emoji = "🥇 "
+                    elif team_place == 2:
+                        medal_emoji = "🥈 "
+                    elif team_place == 3:
+                        medal_emoji = "🥉 "
+
+                    text += f"{medal_emoji}<b>{team_place}. {team_name}</b>\n"
+                    text += f"   👤 {member1_name} (@{member1_username or 'нет username'}): {member1_result}\n"
+                    text += f"   👤 {member2_name} (@{member2_username or 'нет username'}): {member2_result}\n\n"
+                    team_place += 1
+                else:
+                    # Team without complete results
+                    text += f"⏳ <b>{team_name}</b>\n"
+                    text += f"   👤 {member1_name} (@{member1_username or 'нет username'}): {member1_result or '—'}\n"
+                    text += f"   👤 {member2_name} (@{member2_username or 'нет username'}): {member2_result or '—'}\n\n"
+
+            text += "\n"
+
         # Show runners without results
         if runners_without_results:
             text += f"⏳ <b>Без результатов ({len(runners_without_results)}):</b>\n\n"
@@ -2966,11 +3017,18 @@ def register_admin_participant_handlers(dp: Dispatcher, bot: Bot, admin_id: int)
             [r for r in runners_with_results if r[5] and r[5].upper() == "DNF"]
         )
 
+        # Calculate team stats
+        teams_finished = len([t for t in teams if get_participant_by_user_id(t[1])[8] and get_participant_by_user_id(t[4])[8] and
+                             get_participant_by_user_id(t[1])[8].upper() != "DNF" and get_participant_by_user_id(t[4])[8].upper() != "DNF"]) if teams else 0
+
         text += f"📊 <b>Статистика:</b>\n"
         text += f"• Зарегистрировано: {total_registered}\n"
         text += f"• Финишировало: {finished_count}\n"
         text += f"• DNF: {dnf_count}\n"
         text += f"• Без результатов: {len(runners_without_results)}\n"
+        if teams:
+            text += f"• Команд всего: {len(teams)}\n"
+            text += f"• Команд финишировало: {teams_finished}\n"
 
         # Split long messages
         if len(text) > 4000:
@@ -3243,7 +3301,7 @@ def register_admin_participant_handlers(dp: Dispatcher, bot: Bot, admin_id: int)
         current_cluster = None
 
         for participant in participants:
-            name, username, target_time, bib_number, category, cluster, result = participant
+            name, username, target_time, bib_number, category, cluster, result, team_name, team_invite_code = participant
 
             # Add separator row if category changed
             if category != current_category:
@@ -3478,7 +3536,7 @@ def register_admin_participant_handlers(dp: Dispatcher, bot: Bot, admin_id: int)
             return
 
         participant = participants[current_index]
-        user_id, username, name, target_time, gender, category, cluster = participant
+        user_id, username, name, target_time, gender, category, cluster, team_name, team_invite_code = participant
 
         # Get existing bib number if any
         try:
@@ -3738,6 +3796,8 @@ def register_admin_participant_handlers(dp: Dispatcher, bot: Bot, admin_id: int)
                     gender,
                     category,
                     cluster,
+                    team_name,
+                    team_invite_code,
                 ) = participant
 
                 try:
@@ -3857,6 +3917,8 @@ def register_admin_participant_handlers(dp: Dispatcher, bot: Bot, admin_id: int)
                     gender,
                     category,
                     cluster,
+                    team_name,
+                    team_invite_code,
                 ) = participant
 
                 try:
@@ -3994,6 +4056,74 @@ def register_admin_participant_handlers(dp: Dispatcher, bot: Bot, admin_id: int)
 
                 protocol_text += f"{category_emoji} <b>{cat_name.upper()}</b>\n"
                 protocol_text += "-" * 25 + "\n"
+
+                # Special handling for "Команда" category - group by team
+                if cat_name == "Команда":
+                    from database import get_teams_from_participants
+                    teams = get_teams_from_participants()
+
+                    if teams:
+                        # Sort teams by result (both members must have results)
+                        def team_sort_key(t):
+                            team_name, member1_id, member1_name, member1_username, member2_id, member2_name, member2_username = t
+                            from database import get_participant_by_user_id
+                            member1_info = get_participant_by_user_id(member1_id)
+                            member2_info = get_participant_by_user_id(member2_id)
+
+                            member1_result = member1_info[8] if member1_info else None
+                            member2_result = member2_info[8] if member2_info else None
+
+                            # If either member DNF or no result, sort last
+                            if not member1_result or not member2_result:
+                                return (3, 0)
+                            if member1_result.upper() == "DNF" or member2_result.upper() == "DNF":
+                                return (2, 0)
+
+                            # Use first member's result for sorting (they should be the same)
+                            try:
+                                if ":" in str(member1_result):
+                                    minutes, seconds = map(int, str(member1_result).split(":"))
+                                    return (0, minutes * 60 + seconds)
+                                else:
+                                    return (1, float(member1_result))
+                            except:
+                                return (3, 0)
+
+                        sorted_teams = sorted(teams, key=team_sort_key)
+
+                        place = 1
+                        for team in sorted_teams:
+                            team_name, member1_id, member1_name, member1_username, member2_id, member2_name, member2_username = team
+                            from database import get_participant_by_user_id
+                            member1_info = get_participant_by_user_id(member1_id)
+                            member2_info = get_participant_by_user_id(member2_id)
+
+                            member1_result = member1_info[8] if member1_info else None
+                            member2_result = member2_info[8] if member2_info else None
+
+                            # Check if team finished (both members have results and not DNF)
+                            if member1_result and member2_result and member1_result.upper() != "DNF" and member2_result.upper() != "DNF":
+                                # Add medal emoji for top 3 teams
+                                medal = ""
+                                if place == 1:
+                                    medal = "🥇 "
+                                elif place == 2:
+                                    medal = "🥈 "
+                                elif place == 3:
+                                    medal = "🥉 "
+
+                                protocol_text += f"   {medal}{place}. <b>{team_name}</b> - {member1_result}\n"
+                                protocol_text += f"      • {member1_name} (@{member1_username or 'нет username'})\n"
+                                protocol_text += f"      • {member2_name} (@{member2_username or 'нет username'})\n"
+                                place += 1
+                            else:
+                                # Team without complete results or DNF
+                                protocol_text += f"   —. <b>{team_name}</b> - {member1_result or '—'}\n"
+                                protocol_text += f"      • {member1_name} (@{member1_username or 'нет username'})\n"
+                                protocol_text += f"      • {member2_name} (@{member2_username or 'нет username'})\n"
+
+                    protocol_text += "\n"
+                    continue
 
                 # Sort by result (DNF last, then by time)
                 def sort_key(p):

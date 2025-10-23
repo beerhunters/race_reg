@@ -444,7 +444,7 @@ async def handle_admin_waitlist_command(message: Message):
     volunteers = []
 
     for entry in waitlist_data:
-        _, user_id, username, name, target_time, role, gender, join_date, _ = entry
+        _, user_id, username, name, target_time, role, gender, join_date, _, _, _, _, _ = entry
         entry_text = (
             f"• <b>{name}</b> (@{username or 'нет'})\n"
             f"  ID: <code>{user_id}</code>\n"
@@ -591,7 +591,7 @@ async def handle_promote_from_waitlist(
         await callback.answer()
         return
 
-    # Извлекаем данные (waitlist имеет 11 полей: id, user_id, username, name, target_time, role, gender, join_date, status, notified_date, expire_date)
+    # Извлекаем данные (waitlist имеет 13 полей: id, user_id, username, name, target_time, role, gender, join_date, status, notified_date, expire_date, team_name, team_invite_code)
     (
         _,
         _,
@@ -604,6 +604,8 @@ async def handle_promote_from_waitlist(
         status,
         notified_date,
         expire_date,
+        team_name,
+        team_invite_code,
     ) = waitlist_entry
 
     # Переводим пользователя с автоматическим увеличением лимита
@@ -614,34 +616,80 @@ async def handle_promote_from_waitlist(
         role = result["role"]
         old_limit = result["old_limit"]
         new_limit = result["new_limit"]
+        result_team_name = result.get("team_name")
+        second_member_promoted = result.get("second_member_promoted", False)
+        second_member_name = result.get("second_member_name")
+        second_member_user_id = result.get("second_member_user_id")
+        second_member_username = result.get("second_member_username")
+        second_member_target_time = result.get("second_member_target_time")
+        second_member_role = result.get("second_member_role")
+        second_member_gender = result.get("second_member_gender")
 
         role_display = "бегун" if role == "runner" else "волонтёров"
         gender_display = "мужской" if gender == "male" else "женский"
 
-        await callback.message.edit_text(
+        message_text = (
             f"✅ <b>Пользователь переведён из очереди!</b>\n\n"
             f"👤 <b>Участник:</b> {user_name} (@{username})\n"
             f"🆔 <b>ID:</b> <code>{user_id}</code>\n"
             f"⏰ <b>Целевое время:</b> {target_time}\n"
             f"👤 <b>Пол:</b> {gender_display}\n"
-            f"🎭 <b>Роль:</b> {role_display}\n\n"
-            f"📊 <b>Лимит {role_display}:</b> {old_limit} → {new_limit}"
+            f"🎭 <b>Роль:</b> {role_display}\n"
         )
 
-        # Уведомляем пользователя
+        # Add team info if this is a team member
+        if result_team_name:
+            message_text += f"👥 <b>Команда:</b> {result_team_name}\n"
+            message_text += f"📂 <b>Категория:</b> Команда (авто)\n"
+
+        message_text += f"\n📊 <b>Лимит {role_display}:</b> {old_limit} → {new_limit}"
+
+        # Add info about second team member if promoted
+        if second_member_promoted and second_member_name:
+            second_gender_display = "мужской" if second_member_gender == "male" else "женский"
+            second_role_display = "бегун" if second_member_role == "runner" else "волонтёр"
+            message_text += (
+                f"\n\n👥 <b>Второй участник команды также переведён автоматически!</b>\n"
+                f"👤 <b>Участник:</b> {second_member_name} (@{second_member_username or 'нет'})\n"
+                f"🆔 <b>ID:</b> <code>{second_member_user_id}</code>\n"
+                f"⏰ <b>Целевое время:</b> {second_member_target_time}\n"
+                f"👤 <b>Пол:</b> {second_gender_display}\n"
+                f"🎭 <b>Роль:</b> {second_role_display}"
+            )
+
+        await callback.message.edit_text(message_text)
+
+        # Уведомляем первого пользователя
         try:
-            await bot.send_message(
-                user_id,
+            user_message = (
                 f"🎉 <b>Поздравляем!</b>\n\n"
                 f"Вы были переведены из очереди ожидания в список участников!\n\n"
                 f"📝 <b>Ваши данные:</b>\n"
                 f"• Имя: {name}\n"
                 f"• Целевое время: {target_time}\n"
-                f"• Роль: {role_display}\n\n"
-                f"💰 <b>Важно:</b> Не забудьте произвести оплату участия {get_participation_fee_text()}!\n"
-                f"📱 Свяжитесь с администратором для подтверждения оплаты.\n\n"
-                f"Используйте /start для просмотра полной информации о вашей регистрации.",
+                f"• Роль: {role_display}\n"
             )
+
+            # Add team info if applicable
+            if result_team_name:
+                user_message += f"• Команда: {result_team_name}\n"
+                user_message += f"• Категория: 👥 Команда (авто)\n"
+
+            if second_member_promoted and second_member_name:
+                user_message += f"\n👥 Ваш напарник по команде ({second_member_name}) также переведён в участники!\n"
+
+                # Если оба участника команды переведены, показываем количество полных команд
+                from database import count_complete_teams
+                complete_teams = count_complete_teams()
+                user_message += f"\n👥 <b>Полных команд зарегистрировано:</b> {complete_teams}\n"
+
+            user_message += (
+                f"\n💰 <b>Важно:</b> Не забудьте произвести оплату участия {get_participation_fee_text()}!\n"
+                f"📱 Свяжитесь с администратором для подтверждения оплаты.\n\n"
+                f"Используйте /start для просмотра полной информации о вашей регистрации."
+            )
+
+            await bot.send_message(user_id, user_message)
         except TelegramForbiddenError:
             logger.warning(f"Пользователь {user_id} заблокировал бот")
             await callback.message.answer(
@@ -649,6 +697,30 @@ async def handle_promote_from_waitlist(
             )
         except Exception as e:
             logger.error(f"Ошибка при уведомлении пользователя {user_id}: {e}")
+
+        # Уведомляем второго участника команды, если он был переведён
+        if second_member_promoted and second_member_user_id:
+            try:
+                from database import count_complete_teams
+                complete_teams = count_complete_teams()
+
+                second_user_message = (
+                    f"🎉 <b>Поздравляем!</b>\n\n"
+                    f"Вы были переведены из очереди ожидания в список участников!\n\n"
+                    f"👥 <b>Команда:</b> {result_team_name}\n"
+                    f"👤 <b>Напарник:</b> {user_name}\n"
+                    f"📂 <b>Категория:</b> Команда (авто)\n\n"
+                    f"👥 <b>Полных команд зарегистрировано:</b> {complete_teams}\n\n"
+                    f"💰 <b>Важно:</b> Не забудьте произвести оплату участия {get_participation_fee_text()}!\n"
+                    f"📱 Свяжитесь с администратором для подтверждения оплаты.\n\n"
+                    f"Используйте /start для просмотра полной информации о вашей регистрации."
+                )
+                await bot.send_message(second_member_user_id, second_user_message)
+                logger.info(f"Уведомление отправлено второму участнику команды: {second_member_name} (ID: {second_member_user_id})")
+            except TelegramForbiddenError:
+                logger.warning(f"Второй участник команды {second_member_user_id} заблокировал бот")
+            except Exception as e:
+                logger.error(f"Ошибка при уведомлении второго участника команды {second_member_user_id}: {e}")
     else:
         error_message = result.get("error", "Неизвестная ошибка")
         await callback.message.edit_text(

@@ -459,12 +459,15 @@ async def handle_admin_approve_transfer(callback: CallbackQuery, bot: Bot, admin
         new_user_id = result["new_user_id"]
         new_name = result["new_name"]
         role = result["role"]
+        team_name = result.get("team_name")
+        team_invite_code = result.get("team_invite_code")
 
         await callback.message.edit_text(
             f"✅ <b>Переоформление слота подтверждено!</b>\n\n"
             f"👤 <b>Оригинальный участник:</b> {original_name} (ID: {original_user_id})\n"
             f"👤 <b>Новый участник:</b> {new_name} (ID: {new_user_id})\n"
-            f"🎭 <b>Роль:</b> {role}\n\n"
+            f"🎭 <b>Роль:</b> {role}\n"
+            f"{'👥 <b>Команда:</b> ' + team_name if team_name else ''}\n\n"
             f"✅ Оригинальный участник удален, новый участник добавлен в базу."
         )
 
@@ -481,16 +484,57 @@ async def handle_admin_approve_transfer(callback: CallbackQuery, bot: Bot, admin
 
         # Уведомляем нового участника
         try:
-            await bot.send_message(
-                new_user_id,
+            new_participant_message = (
                 f"🎉 <b>Поздравляем!</b>\n\n"
                 f"Ваша регистрация подтверждена!\n"
                 f"Вы успешно заняли слот участника <b>{original_name}</b>.\n\n"
+            )
+
+            if team_name:
+                new_participant_message += f"👥 <b>Вы присоединились к команде:</b> {team_name}\n\n"
+
+            new_participant_message += (
                 f"💰 <b>Важно:</b> Не забудьте произвести оплату участия!\n"
                 f"Используйте команду /start для просмотра информации о вашей регистрации."
             )
+
+            await bot.send_message(new_user_id, new_participant_message)
         except Exception as e:
             logger.error(f"Ошибка при уведомлении нового участника: {e}")
+
+        # Если участник был в команде, уведомляем второго участника команды
+        if team_name:
+            try:
+                from database import get_participant_by_user_id
+                import sqlite3
+                from database import DB_PATH
+
+                # Найти второго участника команды
+                with sqlite3.connect(DB_PATH, timeout=10) as conn:
+                    cursor = conn.cursor()
+                    cursor.execute(
+                        """
+                        SELECT user_id, name FROM participants
+                        WHERE team_name = ? AND user_id != ? AND category = 'Команда'
+                        LIMIT 1
+                        """,
+                        (team_name, new_user_id)
+                    )
+                    teammate = cursor.fetchone()
+
+                if teammate:
+                    teammate_id, teammate_name = teammate
+                    teammate_message = (
+                        f"🔄 <b>Изменение в вашей команде</b>\n\n"
+                        f"👥 <b>Команда:</b> {team_name}\n\n"
+                        f"Ваш напарник <b>{original_name}</b> переоформил слот.\n"
+                        f"Теперь ваш новый напарник: <b>{new_name}</b>\n\n"
+                        f"Желаем успехов на гонке!"
+                    )
+                    await bot.send_message(teammate_id, teammate_message)
+                    logger.info(f"Уведомление о смене напарника отправлено участнику {teammate_name} (ID: {teammate_id})")
+            except Exception as e:
+                logger.error(f"Ошибка при уведомлении напарника по команде: {e}")
 
     else:
         error_message = result.get("error", "Неизвестная ошибка")

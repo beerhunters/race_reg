@@ -101,6 +101,9 @@ class RegistrationForm(StatesGroup):
     # Bib number info upload state
     waiting_for_bib_info_file = State()
 
+    # Team registration states
+    waiting_for_team_name = State()
+
     processed = State()
 
 
@@ -391,9 +394,23 @@ def create_notify_audience_keyboard():
 
 def create_settings_category_keyboard():
     """Create settings category keyboard"""
+    # Get current team mode status
+    team_mode_enabled = True  # default
+    try:
+        from database import get_setting
+        team_mode_setting = get_setting("team_mode_enabled")
+        team_mode_enabled = team_mode_setting == 1 if team_mode_setting is not None else True
+    except:
+        pass
+
+    team_mode_text = "👥 Командный режим: ✅ Включен" if team_mode_enabled else "👥 Командный режим: ❌ Выключен"
+
     commands = [
         InlineKeyboardButton(
             text="🔢 Изменить лимит участников", callback_data="admin_edit_runners"
+        ),
+        InlineKeyboardButton(
+            text=team_mode_text, callback_data="admin_toggle_team_mode"
         ),
         InlineKeyboardButton(
             text="📅 Установить дату окончания регистрации",

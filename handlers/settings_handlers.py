@@ -493,4 +493,58 @@ def register_settings_handlers(dp: Dispatcher, bot: Bot, admin_id: int):
     async def callback_set_event_location(callback: CallbackQuery, state: FSMContext):
         await set_event_location(callback, state)
 
+    @dp.callback_query(F.data == "admin_toggle_team_mode")
+    async def toggle_team_mode(callback: CallbackQuery):
+        """Toggle team mode setting"""
+        user_id = callback.from_user.id
+        if user_id != admin_id:
+            await callback.answer("❌ Доступ запрещен")
+            return
+
+        logger.info(f"Команда переключения командного режима от user_id={user_id}")
+
+        # Get current team mode setting
+        current_team_mode = get_setting("team_mode_enabled")
+        current_team_mode = int(current_team_mode) if current_team_mode is not None else 1
+
+        # Toggle the value (1 -> 0, 0 -> 1)
+        new_team_mode = 0 if current_team_mode == 1 else 1
+
+        # Save new value
+        success = set_setting("team_mode_enabled", new_team_mode)
+
+        if success:
+            status_text = "включен" if new_team_mode == 1 else "выключен"
+            emoji = "✅" if new_team_mode == 1 else "❌"
+
+            text = f"{emoji} <b>Командный режим {status_text}</b>\n\n"
+
+            if new_team_mode == 1:
+                text += "✅ Пользователи могут регистрироваться как команды.\n"
+                text += "При выборе /start доступны две опции:\n"
+                text += "• Зарегистрироваться как бегун\n"
+                text += "• Зарегистрироваться как команда"
+            else:
+                text += "❌ Регистрация команд отключена.\n"
+                text += "При выборе /start доступна только опция:\n"
+                text += "• Зарегистрироваться как бегун"
+
+            await callback.message.edit_text(text)
+            logger.info(f"Командный режим {'включен' if new_team_mode == 1 else 'выключен'}")
+
+            # Обновляем клавиатуру настроек через 1 секунду чтобы показать изменение
+            import asyncio
+            await asyncio.sleep(1)
+
+            from .utils import create_settings_category_keyboard
+            await callback.message.edit_text(
+                "⚙️ <b>Настройки</b>\n\nВыберите параметр для изменения:",
+                reply_markup=create_settings_category_keyboard()
+            )
+        else:
+            await callback.message.edit_text("❌ Ошибка при изменении настройки. Попробуйте снова.")
+            logger.error("Ошибка при обновлении настройки team_mode_enabled")
+
+        await callback.answer()
+
     log.handler_registration("settings_handlers completed")

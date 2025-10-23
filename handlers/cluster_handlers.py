@@ -413,6 +413,8 @@ def register_cluster_handlers(dp: Dispatcher, bot: Bot, admin_id: int):
                 role,
                 result,
                 bib_number,
+                team_name,
+                team_invite_code,
             ) = participant
 
             # Group by category first
@@ -580,6 +582,8 @@ def register_cluster_handlers(dp: Dispatcher, bot: Bot, admin_id: int):
                 role,
                 result,
                 bib_number,
+                team_name,
+                team_invite_code,
             ) = participant
 
             try:
@@ -681,6 +685,8 @@ def register_cluster_handlers(dp: Dispatcher, bot: Bot, admin_id: int):
                     role,
                     result,
                     bib_number,
+                    team_name,
+                    team_invite_code,
                 ) = participant
                 if role != "runner":  # Only runners have categories
                     continue
@@ -949,6 +955,8 @@ def register_cluster_handlers(dp: Dispatcher, bot: Bot, admin_id: int):
                     role,
                     result,
                     bib_number,
+                    team_name,
+                    team_invite_code,
                 ) = participant
 
                 # All fields are now available from the participant tuple
