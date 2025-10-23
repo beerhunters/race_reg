@@ -1,11 +1,10 @@
 import os
 import shutil
-import sqlite3
 import json
-from datetime import datetime, timedelta
+from datetime import datetime
 from aiogram import Dispatcher, Bot, F
 from aiogram.fsm.context import FSMContext
-from aiogram.types import Message, CallbackQuery, BufferedInputFile
+from aiogram.types import Message, CallbackQuery, BufferedInputFile, InlineKeyboardMarkup, InlineKeyboardButton
 import pytz
 import zipfile
 import asyncio
@@ -145,8 +144,6 @@ def register_backup_handlers(dp: Dispatcher, bot: Bot, admin_id: int):
         text += "• Создать резервную копию вручную\n"
         text += "• Запустить/остановить автобекапы\n"
         text += "• Очистить старые бекапы"
-
-        from aiogram.types import InlineKeyboardMarkup, InlineKeyboardButton
 
         keyboard = InlineKeyboardMarkup(
             inline_keyboard=[
