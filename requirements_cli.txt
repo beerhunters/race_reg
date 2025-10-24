@@ -1,0 +1,26 @@
+# Beer Mile Admin CLI Tool - Dependencies
+
+# CLI фреймворк
+typer[all]==0.9.0
+click==8.1.7
+
+# Интерактивность
+questionary==2.0.1
+rich==13.7.0
+
+# Работа с данными
+tabulate==0.9.0
+pandas==2.1.4
+
+# Экспорт
+openpyxl==3.1.2
+reportlab==4.0.7
+xlsxwriter==3.1.9
+
+# Утилиты
+python-dateutil==2.8.2
+pytz==2023.3
+
+# Дополнительные утилиты
+colorama==0.4.6
+prompt-toolkit==3.0.43
