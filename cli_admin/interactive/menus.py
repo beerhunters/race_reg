@@ -128,14 +128,12 @@ def settings_menu():
             from cli_admin.database import get_setting
 
             max_runners = get_setting("max_runners") or "100"
-            max_volunteers = get_setting("max_volunteers") or "20"
             event_date = get_setting("event_date") or "Не установлена"
             team_mode = get_setting("team_mode_enabled")
             team_mode_text = "✅ Включен" if team_mode == "1" or team_mode == 1 else "❌ Выключен"
 
             console.print(f"[cyan]Текущие настройки:[/cyan]")
             console.print(f"  • Макс. бегунов: [green]{max_runners}[/green]")
-            console.print(f"  • Макс. волонтеров: [green]{max_volunteers}[/green]")
             console.print(f"  • Дата мероприятия: [green]{event_date}[/green]")
             console.print(f"  • Командный режим: {team_mode_text}")
             console.print()

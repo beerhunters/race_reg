@@ -74,7 +74,6 @@ def show_status():
         complete_teams = count_complete_teams()
 
         max_runners = get_setting("max_runners") or 100
-        max_volunteers = get_setting("max_volunteers") or 20
         event_date = get_setting("event_date") or "Не установлена"
         team_mode = get_setting("team_mode_enabled")
 
@@ -93,7 +92,6 @@ def show_status():
     table.add_column(style="green")
 
     table.add_row(f"{EMOJI_RUNNER} Участников (бегунов):", f"{runners}/{max_runners}")
-    table.add_row(f"{EMOJI_VOLUNTEER} Волонтеров:", f"{volunteers}/{max_volunteers}")
     table.add_row(f"💳 Оплатили:", f"{paid_count}/{total_participants}")
     table.add_row(f"📋 В листе ожидания:", str(waitlist))
     table.add_row(f"{EMOJI_TEAM} Команд:", f"{teams} ({complete_teams} полных)")

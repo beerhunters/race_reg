@@ -41,8 +41,13 @@ class RegistrationForm(StatesGroup):
     waiting_for_notify_unpaid_message = State()
     waiting_for_reg_end_date = State()
     waiting_for_price = State()
+    waiting_for_event_price = State()
     waiting_for_event_date = State()
+    waiting_for_create_event_date = State()
+    waiting_for_event_time = State()
+    waiting_for_create_event_time = State()
     waiting_for_event_location = State()
+    waiting_for_create_event_location = State()
     waiting_for_paid_id = State()
     waiting_for_bib = State()
     waiting_for_remove_id = State()
@@ -80,6 +85,10 @@ class RegistrationForm(StatesGroup):
     # Archive states
     waiting_for_archive_date = State()
 
+    # Event creation states
+    waiting_for_event_confirmation = State()
+    waiting_for_finish_event_confirmation = State()
+
     # Cluster and category states
     waiting_for_category_assignment = State()
     waiting_for_cluster_assignment = State()
@@ -105,24 +114,6 @@ class RegistrationForm(StatesGroup):
     waiting_for_team_name = State()
 
     processed = State()
-
-
-def create_role_keyboard():
-    keyboard = InlineKeyboardMarkup(
-        inline_keyboard=[
-            [
-                InlineKeyboardButton(
-                    text=messages["role_runner"], callback_data="role_runner"
-                )
-            ],
-            [
-                InlineKeyboardButton(
-                    text=messages["role_volunteer"], callback_data="role_volunteer"
-                )
-            ],
-        ]
-    )
-    return keyboard
 
 
 def create_register_keyboard():
@@ -267,8 +258,23 @@ def create_edit_confirmation_keyboard():
 
 
 def create_admin_commands_keyboard():
-    """Create admin commands keyboard"""
-    commands = [
+    """Create admin commands keyboard - dynamic based on event state"""
+    from database import get_event_state
+
+    event_state = get_event_state()
+
+    commands = []
+
+    # Show "Создать событие" as FIRST button if no active event
+    if event_state == "no_event":
+        commands.append(
+            InlineKeyboardButton(
+                text="➕ Создать событие", callback_data="admin_create_event"
+            )
+        )
+
+    # Standard buttons
+    commands.extend([
         InlineKeyboardButton(
             text="👥 Участники", callback_data="category_participants"
         ),
@@ -285,7 +291,8 @@ def create_admin_commands_keyboard():
         InlineKeyboardButton(
             text="💾 Резервные копии", callback_data="admin_backup_settings"
         ),
-    ]
+    ])
+
     return InlineKeyboardMarkup(inline_keyboard=[[cmd] for cmd in commands])
 
 
@@ -318,21 +325,35 @@ def create_participants_category_keyboard():
 
 
 def create_race_category_keyboard():
-    """Create race category keyboard"""
+    """Create race category keyboard - dynamic based on event state"""
+    from database import get_event_state
+
+    event_state = get_event_state()
+
     commands = [
         InlineKeyboardButton(text="🏆 Протокол", callback_data="admin_protocol"),
         InlineKeyboardButton(
             text="📊 Экспорт в Excel", callback_data="admin_export_excel"
         ),
-        InlineKeyboardButton(
-            text="📂 Архивировать гонку", callback_data="admin_archive_race"
-        ),
+    ]
+
+    # Show "Закончить мероприятие" only if there are participants and no archive
+    if event_state in ["active_event", "finished_not_archived", "has_participants_no_archive"]:
+        commands.append(
+            InlineKeyboardButton(
+                text="🏁 Закончить актуальное мероприятие",
+                callback_data="admin_finish_event"
+            )
+        )
+
+    commands.extend([
         InlineKeyboardButton(text="📈 Прошлые гонки", callback_data="admin_past_races"),
         InlineKeyboardButton(
             text="🔢 Загрузить информацию о номерах", callback_data="admin_upload_bib_info"
         ),
         InlineKeyboardButton(text="🏠 Главное меню", callback_data="main_menu"),
-    ]
+    ])
+
     return InlineKeyboardMarkup(inline_keyboard=[[cmd] for cmd in commands])
 
 
@@ -456,7 +477,7 @@ def get_participation_fee_text():
     try:
         from database import get_setting
 
-        fee = get_setting("participation_price")
+        fee = get_setting("participation_fee")
 
         if fee is None:
             # Fallback to config if not set in database
@@ -495,17 +516,34 @@ def get_event_location_text():
     """Get formatted event location text from database"""
     try:
         from database import get_setting
-        
+
         event_location = get_setting("event_location")
-        
+
         if event_location is None:
             return "Бар ____________"  # Default placeholder
-        
+
         return str(event_location)
-        
+
     except Exception as e:
         logger.warning(f"Ошибка получения места мероприятия из БД: {e}")
         return "Бар ____________"  # Default placeholder
+
+
+def get_event_time_text():
+    """Get formatted event time text from database"""
+    try:
+        from database import get_setting
+
+        event_time = get_setting("event_time")
+
+        if event_time is None:
+            return "14:00"  # Default placeholder
+
+        return str(event_time)
+
+    except Exception as e:
+        logger.warning(f"Ошибка получения времени мероприятия из БД: {e}")
+        return "14:00"  # Default placeholder
 
 
 def create_clusters_category_keyboard():

@@ -185,7 +185,7 @@ def register_admin_participant_handlers(dp: Dispatcher, bot: Bot, admin_id: int)
         max_runners = get_setting("max_runners")
         current_runners = get_participant_count_by_role("runner")
         reg_end_date = get_setting("reg_end_date")
-        participation_price = get_setting("participation_price")
+        participation_fee = get_setting("participation_fee")
         event_date = get_setting("event_date")
         event_location = get_setting("event_location")
 
@@ -213,16 +213,16 @@ def register_admin_participant_handlers(dp: Dispatcher, bot: Bot, admin_id: int)
         else:
             text += "📅 <b>Дата окончания регистрации:</b> не установлена\n\n"
 
-        # Participation price
-        if participation_price is not None:
+        # Participation fee
+        if participation_fee is not None:
             try:
-                price = int(participation_price)
+                price = int(participation_fee)
                 if price == 0:
                     text += "💰 <b>Цена участия:</b> бесплатно\n\n"
                 else:
                     text += f"💰 <b>Цена участия:</b> {price} руб.\n\n"
             except (ValueError, TypeError):
-                text += f"💰 <b>Цена участия:</b> {participation_price}\n\n"
+                text += f"💰 <b>Цена участия:</b> {participation_fee}\n\n"
         else:
             text += "💰 <b>Цена участия:</b> не установлена\n\n"
 
@@ -284,7 +284,6 @@ def register_admin_participant_handlers(dp: Dispatcher, bot: Bot, admin_id: int)
         # Build beautiful participant list
         text = "👥 <b>Список участников</b>\n\n"
         runners = []
-        volunteers = []
 
         for participant in participants:
             (
@@ -305,12 +304,9 @@ def register_admin_participant_handlers(dp: Dispatcher, bot: Bot, admin_id: int)
             ) = participant
 
             # Format payment status
-            if role == "runner":
-                payment_emoji = "✅" if payment_status == "paid" else "❌"
-                payment_text = "Оплачено" if payment_status == "paid" else "Не оплачено"
-                payment_info = f"{payment_emoji} {payment_text}"
-            else:
-                payment_info = "—"
+            payment_emoji = "✅" if payment_status == "paid" else "❌"
+            payment_text = "Оплачено" if payment_status == "paid" else "Не оплачено"
+            payment_info = f"{payment_emoji} {payment_text}"
 
             # Format bib number
             bib_info = f"№{bib_number}" if bib_number else "—"
@@ -352,22 +348,13 @@ def register_admin_participant_handlers(dp: Dispatcher, bot: Bot, admin_id: int)
                 f"/paid_{user_id_p}\n"
             )
 
-            if role == "runner":
-                runners.append(participant_line)
-            else:
-                volunteers.append(participant_line)
+            runners.append(participant_line)
 
         # Add runners section
         if runners:
             text += f"🏃 <b>Бегуны ({len(runners)}):</b>\n\n"
             for i, runner in enumerate(runners, 1):
                 text += f"{i}. {runner}\n"
-
-        # Add volunteers section
-        if volunteers:
-            text += f"🙌 <b>Волонтёры ({len(volunteers)}):</b>\n\n"
-            for i, volunteer in enumerate(volunteers, 1):
-                text += f"{i}. {volunteer}\n"
 
         # Split long messages
         if len(text) > 4000:
@@ -381,18 +368,6 @@ def register_admin_participant_handlers(dp: Dispatcher, bot: Bot, admin_id: int)
                     else:
                         chunk1 += f"{i}. {runner}\n"
                 chunks.append(chunk1.rstrip())
-
-            if volunteers:
-                chunk2 = f"🙌 <b>Волонтёры ({len(volunteers)}):</b>\n\n"
-                for i, volunteer in enumerate(volunteers, 1):
-                    if len(chunk2 + f"{i}. {volunteer}\n") > 4000:
-                        chunks.append(chunk2.rstrip())
-                        chunk2 = (
-                            f"🙌 <b>Волонтёры (продолжение):</b>\n\n{i}. {volunteer}\n"
-                        )
-                    else:
-                        chunk2 += f"{i}. {volunteer}\n"
-                chunks.append(chunk2.rstrip())
 
             for chunk in chunks:
                 await message.answer(chunk)
@@ -532,10 +507,6 @@ def register_admin_participant_handlers(dp: Dispatcher, bot: Bot, admin_id: int)
                     "SELECT COUNT(*) FROM participants WHERE role = 'runner'"
                 )
                 runner_count = cursor.fetchone()[0]
-                cursor.execute(
-                    "SELECT COUNT(*) FROM participants WHERE role = 'volunteer'"
-                )
-                volunteer_count = cursor.fetchone()[0]
                 cursor.execute("SELECT COUNT(*) FROM pending_registrations")
                 pending_reg_count = cursor.fetchone()[0]
 
@@ -566,9 +537,7 @@ def register_admin_participant_handlers(dp: Dispatcher, bot: Bot, admin_id: int)
             text += f"🎯 <b>Слоты и регистрация:</b>\n"
             text += f"• Максимум бегунов: {max_runners}\n"
             text += f"• Зарегистрировано бегунов: {runner_count}\n"
-            text += f"• Доступных слотов: {max_runners - runner_count}\n"
-            text += f"• Зарегистрировано волонтёров: {volunteer_count}\n"
-            text += f"• Всего участников: {runner_count + volunteer_count}\n\n"
+            text += f"• Доступных слотов: {max_runners - runner_count}\n\n"
 
             # Payment statistics
             text += f"💰 <b>Статистика оплаты:</b>\n"
@@ -1000,7 +969,7 @@ def register_admin_participant_handlers(dp: Dispatcher, bot: Bot, admin_id: int)
 
         # Get current participant count and limit for this role
         current_count = get_participant_count_by_role(participant_role)
-        current_limit = get_setting(f"max_{participant_role}s")  # max_runners or max_volunteers
+        current_limit = get_setting(f"max_{participant_role}s")  # max_runners
 
         if current_limit is None:
             current_limit = 0
@@ -1177,7 +1146,6 @@ def register_admin_participant_handlers(dp: Dispatcher, bot: Bot, admin_id: int)
         text += "📋 <b>Список участников:</b>\n\n"
 
         runners = []
-        volunteers = []
 
         for participant in participants:
             (
@@ -1215,22 +1183,13 @@ def register_admin_participant_handlers(dp: Dispatcher, bot: Bot, admin_id: int)
                 f"/set_bib_{user_id_p}\n"
             )
 
-            if role == "runner":
-                runners.append(participant_line)
-            else:
-                volunteers.append(participant_line)
+            runners.append(participant_line)
 
         # Add runners section
         if runners:
             text += f"🏃 <b>Бегуны ({len(runners)}):</b>\n\n"
             for i, runner in enumerate(runners, 1):
                 text += f"{i}. {runner}\n"
-
-        # Add volunteers section
-        if volunteers:
-            text += f"🙌 <b>Волонтёры ({len(volunteers)}):</b>\n\n"
-            for i, volunteer in enumerate(volunteers, 1):
-                text += f"{i}. {volunteer}\n"
 
         # Split long messages
         if len(text) > 4000:
@@ -1288,7 +1247,6 @@ def register_admin_participant_handlers(dp: Dispatcher, bot: Bot, admin_id: int)
 
         # Separate participants into runners and volunteers
         runners = []
-        volunteers = []
 
         for participant in participants:
             user_id_p, username, name, target_time, role, reg_date, payment_status, bib_number, result, gender, category, cluster, team_name, team_invite_code = participant
@@ -1374,7 +1332,7 @@ def register_admin_participant_handlers(dp: Dispatcher, bot: Bot, admin_id: int)
 
             # Get current participant count and limit for this role
             current_count = get_participant_count_by_role(participant_role)
-            current_limit = get_setting(f"max_{participant_role}s")  # max_runners or max_volunteers
+            current_limit = get_setting(f"max_{participant_role}s")  # max_runners
 
             if current_limit is None:
                 current_limit = 0

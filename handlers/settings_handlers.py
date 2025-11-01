@@ -294,7 +294,7 @@ def register_settings_handlers(dp: Dispatcher, bot: Bot, admin_id: int):
             message = event
         
         # Get current price
-        current_price = get_setting("participation_price")
+        current_price = get_setting("participation_fee")
         if current_price is None:
             current_price = "не установлена"
         
@@ -309,7 +309,7 @@ def register_settings_handlers(dp: Dispatcher, bot: Bot, admin_id: int):
         await state.set_state(RegistrationForm.waiting_for_price)
 
     @dp.message(RegistrationForm.waiting_for_price)
-    async def process_participation_price(message: Message, state: FSMContext):
+    async def process_participation_fee(message: Message, state: FSMContext):
         """Process new participation price"""
         if message.from_user.id != admin_id:
             await message.answer("❌ Доступ запрещен")
@@ -328,11 +328,11 @@ def register_settings_handlers(dp: Dispatcher, bot: Bot, admin_id: int):
             return
         
         # Get old price for logging
-        old_price = get_setting("participation_price")
+        old_price = get_setting("participation_fee")
         old_price_str = str(old_price) if old_price is not None else "не установлена"
-        
+
         # Save new price
-        success = set_setting("participation_price", new_price)
+        success = set_setting("participation_fee", new_price)
         
         if success:
             if new_price == 0:
@@ -349,7 +349,7 @@ def register_settings_handlers(dp: Dispatcher, bot: Bot, admin_id: int):
             logger.info(f"Цена участия изменена с '{old_price_str}' на '{new_price}' руб.")
         else:
             await message.answer("❌ Ошибка при сохранении цены. Попробуйте снова.")
-            logger.error("Ошибка при обновлении настройки participation_price")
+            logger.error("Ошибка при обновлении настройки participation_fee")
         
         await state.clear()
 

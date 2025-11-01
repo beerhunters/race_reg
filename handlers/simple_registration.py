@@ -34,6 +34,7 @@ from .utils import (
     get_participation_fee_text,
     get_event_date_text,
     get_event_location_text,
+    get_event_time_text,
 )
 
 logger = get_logger(__name__)
@@ -135,6 +136,15 @@ async def handle_start_command(
             log.notification_sent("admin_commands", user_id, False, str(e))
             await message.answer("🔧 Админ-панель")
         await state.clear()
+        return
+
+    # Проверка активности события (до проверки reg_end_date)
+    if not is_current_event_active():
+        await message.answer(
+            "⚠️ <b>Регистрация на мероприятие пока не открыта</b>\n\n"
+            "Следите за обновлениями!",
+            reply_markup=create_main_menu_keyboard()
+        )
         return
 
     # Проверка даты окончания регистрации
@@ -423,6 +433,7 @@ async def handle_start_command(
         start_message = messages["start_message"].format(
             fee=get_participation_fee_text(),
             event_date=get_event_date_text(),
+            event_time=get_event_time_text(),
             event_location=get_event_location_text(),
         )
 
@@ -444,6 +455,7 @@ async def handle_start_command(
             messages["start_message"].format(
                 fee=get_participation_fee_text(),
                 event_date=get_event_date_text(),
+                event_time=get_event_time_text(),
                 event_location=get_event_location_text(),
             ),
             reply_markup=create_start_registration_keyboard(),
@@ -1901,6 +1913,7 @@ def register_simple_registration_handlers(dp: Dispatcher, bot: Bot, admin_id: in
         start_message = messages["start_message"].format(
             fee=get_participation_fee_text(),
             event_date=get_event_date_text(),
+            event_time=get_event_time_text(),
             event_location=get_event_location_text(),
         )
 

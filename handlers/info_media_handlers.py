@@ -15,6 +15,7 @@ from .utils import (
     get_participation_fee_text,
     get_event_date_text,
     get_event_location_text,
+    get_event_time_text,
 )
 
 
@@ -35,6 +36,7 @@ def register_info_media_handlers(dp: Dispatcher, bot: Bot, admin_id: int):
                     caption=messages["info_message"].format(
                         fee=get_participation_fee_text(),
                         event_date=get_event_date_text(),
+                        event_time=get_event_time_text(),
                         event_location=get_event_location_text()
                     ),
                 )
@@ -46,6 +48,7 @@ def register_info_media_handlers(dp: Dispatcher, bot: Bot, admin_id: int):
                     messages["info_message"].format(
                         fee=get_participation_fee_text(),
                         event_date=get_event_date_text(),
+                        event_time=get_event_time_text(),
                         event_location=get_event_location_text()
                     )
                 )
@@ -60,6 +63,7 @@ def register_info_media_handlers(dp: Dispatcher, bot: Bot, admin_id: int):
                 messages["info_message"].format(
                     fee=get_participation_fee_text(),
                     event_date=get_event_date_text(),
+                    event_time=get_event_time_text(),
                     event_location=get_event_location_text()
                 )
             )

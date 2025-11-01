@@ -36,7 +36,6 @@ def overview():
 
         # Получить лимиты
         max_runners = get_setting("max_runners") or 100
-        max_volunteers = get_setting("max_volunteers") or 20
 
         # Подсчитать оплаченных
         all_p = get_all_participants()
@@ -50,13 +49,10 @@ def overview():
         # Участники
         table.add_row("Всего участников", str(total_participants))
         table.add_row("Бегунов", f"{runners} / {max_runners}")
-        table.add_row("Волонтеров", f"{volunteers} / {max_volunteers}")
 
         # Процент заполнения
         runners_percent = (runners / int(max_runners)) * 100 if max_runners else 0
-        volunteers_percent = (volunteers / int(max_volunteers)) * 100 if max_volunteers else 0
         table.add_row("Заполнение (бегуны)", f"{runners_percent:.1f}%")
-        table.add_row("Заполнение (волонтеры)", f"{volunteers_percent:.1f}%")
 
         # Оплата
         payment_percent = (paid_count / total_participants) * 100 if total_participants else 0
@@ -115,10 +111,10 @@ def payment_stats():
         console.print(table)
 
         # Подсчет стоимости
-        participation_price = get_setting("participation_price")
-        if participation_price:
+        participation_fee = get_setting("participation_fee")
+        if participation_fee:
             try:
-                price = float(participation_price)
+                price = float(participation_fee)
                 total_expected = total * price
                 total_received = paid * price
                 console.print(f"\n[cyan]Ожидаемый доход: {total_expected:.2f} руб[/cyan]")

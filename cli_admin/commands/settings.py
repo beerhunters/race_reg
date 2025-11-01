@@ -19,11 +19,10 @@ console = Console()
 
 SETTINGS_KEYS = [
     "max_runners",
-    "max_volunteers",
     "team_mode_enabled",
     "registration_end_date",
     "event_date",
-    "participation_price",
+    "participation_fee",
     "event_location",
     "auto_backup_enabled",
 ]

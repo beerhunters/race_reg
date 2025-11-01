@@ -129,13 +129,13 @@ def init_db():
                 logger.info("Добавлен столбец team_invite_code в таблицу waitlist")
 
             cursor.execute(
-                "SELECT key FROM settings WHERE key IN ('max_runners', 'max_volunteers', 'team_mode_enabled')"
+                "SELECT key FROM settings WHERE key IN ('max_runners', 'team_mode_enabled')"
             )
             columns = [info[0] for info in cursor.fetchall()]
-            expected_columns = ["max_runners", "max_volunteers", "team_mode_enabled"]
+            expected_columns = ["max_runners", "team_mode_enabled"]
             missing_columns = [col for col in expected_columns if col not in columns]
             for col in missing_columns:
-                # Default values: max_runners=100, max_volunteers=100, team_mode_enabled=1 (enabled)
+                # Default values: max_runners=100, team_mode_enabled=1 (enabled)
                 default_value = 1 if col == "team_mode_enabled" else 100
                 cursor.execute(
                     "INSERT INTO settings (key, value) VALUES (?, ?)", (col, default_value)
@@ -1477,6 +1477,67 @@ def is_current_event_active() -> bool:
         return False
 
 
+def get_event_state() -> str:
+    """
+    Determine current event state for UI logic
+
+    Returns:
+        - "no_event": No active event and participants table is empty
+        - "active_event": Active event (reg_end_date set and not passed)
+        - "finished_not_archived": Event finished or has participants but no archive table exists
+        - "has_participants_no_archive": Has participants but no active event and no archive
+    """
+    try:
+        # Check if there are any participants
+        participants_count = get_participant_count()
+        has_participants = participants_count > 0
+
+        # Check if event is currently active
+        is_active = is_current_event_active()
+
+        # Get reg_end_date to check for archive table
+        reg_end_date = get_setting("reg_end_date")
+
+        # Check if archive table exists for current event date
+        has_archive = False
+        if reg_end_date:
+            try:
+                from datetime import datetime
+                # Parse the date from reg_end_date format "%H:%M %d.%m.%Y"
+                date_obj = datetime.strptime(reg_end_date, "%H:%M %d.%m.%Y")
+                table_name = f"race_{date_obj.strftime('%d_%m_%Y')}"
+
+                with sqlite3.connect(DB_PATH, timeout=10) as conn:
+                    cursor = conn.cursor()
+                    cursor.execute(
+                        "SELECT name FROM sqlite_master WHERE type='table' AND name=?",
+                        (table_name,)
+                    )
+                    has_archive = cursor.fetchone() is not None
+            except (ValueError, Exception) as e:
+                logger.warning(f"Ошибка при проверке архивной таблицы: {e}")
+                has_archive = False
+
+        # Determine state based on conditions
+        if not has_participants and not reg_end_date:
+            return "no_event"
+        elif is_active:
+            return "active_event"
+        elif has_participants and not has_archive:
+            return "finished_not_archived"
+        elif has_participants and not is_active and not has_archive:
+            return "has_participants_no_archive"
+        elif not has_participants and reg_end_date:
+            # Event registered but no participants yet
+            return "active_event" if is_active else "finished_not_archived"
+        else:
+            return "no_event"
+
+    except Exception as e:
+        logger.error(f"Ошибка при определении состояния события: {e}")
+        return "no_event"
+
+
 # ============================================================================
 # BLOCKED USERS CLEANUP FUNCTIONS
 # ============================================================================
@@ -1857,7 +1918,7 @@ def promote_waitlist_user_by_id(user_id: int) -> dict:
 
             # Get current participant count and limit for this role
             current_count = get_participant_count_by_role(role)
-            current_limit = get_setting(f"max_{role}s")  # max_runners or max_volunteers
+            current_limit = get_setting(f"max_{role}s")  # max_runners
 
             if current_limit is None:
                 current_limit = 0
@@ -2029,7 +2090,7 @@ def demote_participant_to_waitlist(user_id: int) -> dict:
             
             # Get current participant count and limit for this role
             current_count = get_participant_count_by_role(role)
-            current_limit = get_setting(f"max_{role}s")  # max_runners or max_volunteers
+            current_limit = get_setting(f"max_{role}s")  # max_runners
             
             if current_limit is None:
                 current_limit = 0
@@ -2354,7 +2415,7 @@ def cancel_user_participation(user_id: int) -> dict:
                         }
 
                 # Get current limit for this role
-                current_limit = get_setting(f"max_{role}s")  # max_runners or max_volunteers
+                current_limit = get_setting(f"max_{role}s")  # max_runners
 
                 if current_limit is None:
                     current_limit = 0

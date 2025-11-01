@@ -12,6 +12,7 @@ from handlers.cluster_handlers import register_cluster_handlers
 from handlers.backup_handlers import register_backup_handlers
 from handlers.team_handlers import register_team_handlers
 from handlers.slot_transfer_handlers import register_slot_transfer_handlers
+from handlers.event_handlers import register_event_handlers
 from logging_config import get_logger, log
 
 logger = get_logger(__name__)
@@ -31,5 +32,6 @@ def register_all_handlers(dp: Dispatcher, bot: Bot, admin_id: int):
     register_backup_handlers(dp, bot, admin_id)
     register_team_handlers(dp, bot, admin_id)
     register_slot_transfer_handlers(dp, bot, admin_id)
+    register_event_handlers(dp, bot, admin_id)
     register_misc_handlers(dp, bot, admin_id)
     log.system_event("All handlers registered successfully")

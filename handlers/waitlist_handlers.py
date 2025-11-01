@@ -524,7 +524,7 @@ async def notify_waitlist_availability(bot: Bot, notified_users: list):
 
 async def check_and_process_waitlist(bot: Bot, admin_id: int, role: str):
     """Check if there are available slots and notify waitlist users"""
-    max_count = get_setting(f"max_{role}s")  # max_runners or max_volunteers
+    max_count = get_setting(f"max_{role}s")  # max_runners
     current_count = get_participant_count_by_role(role)
 
     if max_count is None:
